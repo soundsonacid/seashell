@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use solana_account::{Account, AccountSharedData, ReadableAccount, WritableAccount};
+use solana_bpf_loader_program::syscalls::create_program_runtime_environment_v1;
 use solana_builtins::BUILTINS;
 use solana_compute_budget::compute_budget::ComputeBudget;
 use solana_feature_set::FeatureSet;
@@ -9,7 +10,7 @@ use solana_hash::Hash;
 use solana_instruction::Instruction;
 use solana_instruction::error::InstructionError;
 use solana_program_runtime::invoke_context::{EnvironmentConfig, InvokeContext};
-use solana_program_runtime::loaded_programs::ProgramCacheEntry;
+use solana_program_runtime::loaded_programs::{LoadProgramMetrics, ProgramCacheEntry};
 use solana_pubkey::Pubkey;
 use solana_timings::ExecuteTimings;
 use solana_transaction_context::TransactionContext;
@@ -35,6 +36,19 @@ impl Seashell {
     // load precompiles, spl programs
     // set_account, load_program, etc. API
     // new_from_snapshot, etc. API
+
+    /// This is likely not what you want to use if you don't need to set up the full environment manually.
+    /// Consider using `Seashell::new()` instead.
+    pub fn new_empty() -> Self {
+        Seashell {
+            config: Config::default(),
+            accounts_db: AccountsDb::new(),
+            compute_budget: ComputeBudget::default(),
+            fee_structure: FeeStructure::default(),
+            feature_set: FeatureSet::default(),
+        }
+    }
+
     pub fn new() -> Self {
         #[rustfmt::skip]
         solana_logger::setup_with_default(
@@ -52,6 +66,7 @@ impl Seashell {
         };
 
         // TODO: revisit precision of this logic
+        // TODO: correct loaders
         // do we need to set up processing environment?
         for builtin in BUILTINS {
             if builtin.enable_feature_id.is_none() {
@@ -66,7 +81,64 @@ impl Seashell {
             }
         }
 
+        let seashell = seashell.load_spl();
+
         seashell
+    }
+
+    pub fn load_spl(mut self) -> Self {
+        crate::spl::load(&mut self);
+        self
+    }
+
+    pub fn load_program_from_bytes(&mut self, program_id: Pubkey, bytes: &[u8]) {
+        self.load_program_from_bytes_with_loader(
+            program_id,
+            bytes,
+            solana_sdk_ids::bpf_loader::id(),
+        );
+    }
+
+    pub fn load_program_from_bytes_with_loader(
+        &mut self,
+        program_id: Pubkey,
+        bytes: &[u8],
+        loader: Pubkey,
+    ) {
+        let current_slot = self.accounts_db.sysvars.clock().slot;
+        let account_size = bytes.len();
+        let minimum_balance_for_rent_exemption = self
+            .accounts_db
+            .sysvars
+            .rent()
+            .minimum_balance(account_size);
+        let mut program_account_shared_data =
+            AccountSharedData::new(minimum_balance_for_rent_exemption, account_size, &loader);
+        program_account_shared_data.set_executable(true);
+        let program_runtime_environment = Arc::new(
+            create_program_runtime_environment_v1(
+                &self.feature_set,
+                &self.compute_budget,
+                false,
+                false,
+            )
+            .expect("Failed to create program runtime environment"),
+        );
+        let program_cache_entry = ProgramCacheEntry::new(
+            &loader,
+            program_runtime_environment,
+            current_slot,
+            current_slot,
+            bytes,
+            account_size,
+            &mut LoadProgramMetrics::default(),
+        )
+        .expect(&format!("Failed to load program {} from bytes", program_id));
+        self.accounts_db
+            .set_account(program_id, program_account_shared_data);
+        self.accounts_db
+            .programs
+            .replenish(program_id, Arc::new(program_cache_entry));
     }
 
     pub fn process_instruction(&mut self, ixn: Instruction) -> InstructionProcessingResult {
@@ -177,12 +249,54 @@ pub enum InstructionProcessingError {
 
 #[cfg(test)]
 mod tests {
+    use solana_instruction::AccountMeta;
+
     use super::*;
 
-    #[test]
-    fn test_simple_transfer() {
-        use solana_instruction::AccountMeta;
+    fn create_mint_account(seashell: &mut Seashell, pubkey: Pubkey, amount: u64) {
+        const MINT_ACCOUNT_SIZE: usize = 82;
+        const MINT_ACCOUNT_RENT_EXEMPTION: u64 = 1461600;
+        let mut account = AccountSharedData::new(
+            MINT_ACCOUNT_RENT_EXEMPTION,
+            MINT_ACCOUNT_SIZE,
+            &solana_sdk_ids::system_program::id(),
+        );
+        account.set_owner(crate::spl::TOKEN_PROGRAM_ID);
+        let mut data = vec![0; MINT_ACCOUNT_SIZE];
+        data[36..44].copy_from_slice(&amount.to_le_bytes());
+        account.set_data_from_slice(&data);
+        account.set_lamports(1000);
+        seashell.accounts_db.set_account(pubkey, account.clone());
+    }
 
+    fn create_token_account(
+        seashell: &mut Seashell,
+        pubkey: Pubkey,
+        mint: Pubkey,
+        owner: Pubkey,
+        amount: u64,
+    ) {
+        const TOKEN_ACCOUNT_SIZE: usize = 165;
+        const TOKEN_ACCOUNT_RENT_EXEMPTION: u64 = 2039000;
+        let mut account = AccountSharedData::new(
+            TOKEN_ACCOUNT_RENT_EXEMPTION,
+            TOKEN_ACCOUNT_SIZE,
+            &solana_sdk_ids::system_program::id(),
+        );
+        account.set_owner(crate::spl::TOKEN_PROGRAM_ID);
+        let mut data = vec![0; TOKEN_ACCOUNT_SIZE];
+        data[0..32].copy_from_slice(&mint.to_bytes());
+        data[32..64].copy_from_slice(&owner.to_bytes());
+        data[64..72].copy_from_slice(&amount.to_le_bytes());
+        data[108] = 1; // `AccountState::Initialized` state
+        account.set_data_from_slice(&data);
+        account.set_lamports(1000);
+        account.set_owner(crate::spl::TOKEN_PROGRAM_ID);
+        seashell.accounts_db.set_account(pubkey, account.clone());
+    }
+
+    #[test]
+    fn test_native_transfer() {
         let mut seashell = Seashell::new();
 
         let from = solana_pubkey::Pubkey::new_unique();
@@ -229,6 +343,71 @@ mod tests {
             post_to.lamports(),
             500,
             "Expected to account to have 500 lamports after transfer"
+        );
+
+        assert!(
+            result.return_data.is_empty(),
+            "Expected no return data, got: {:?}",
+            result.return_data
+        );
+    }
+
+    #[test]
+    fn test_spl_transfer() {
+        let mut seashell = Seashell::new();
+        let from: Pubkey = solana_pubkey::Pubkey::new_unique();
+        let to = solana_pubkey::Pubkey::new_unique();
+        let from_authority = solana_pubkey::Pubkey::new_unique();
+        let mint = solana_pubkey::Pubkey::new_unique();
+
+        create_mint_account(&mut seashell, mint, 1000);
+        create_token_account(&mut seashell, from, mint, from_authority, 1000);
+        create_token_account(&mut seashell, to, mint, Pubkey::new_unique(), 0);
+        seashell.airdrop(from_authority, 1000);
+
+        let mut data = [0; 9];
+        data[0] = 3;
+        data[1..9].copy_from_slice(&500u64.to_le_bytes());
+
+        let ixn = Instruction {
+            program_id: crate::spl::TOKEN_PROGRAM_ID,
+            accounts: vec![
+                AccountMeta::new(from, true),
+                AccountMeta::new(to, false),
+                AccountMeta::new_readonly(from_authority, true),
+            ],
+            data: data.to_vec(),
+        };
+
+        let result = seashell.process_instruction(ixn);
+
+        assert!(result.error.is_none(), "Expected no error, got: {:?}", result.error);
+        assert_eq!(result.compute_units_consumed, 4644);
+
+        let post_from = result
+            .resulting_accounts
+            .iter()
+            .find(|(pubkey, _)| *pubkey == from)
+            .expect("Resulting account should exist")
+            .to_owned()
+            .1;
+        let post_from_balance = u64::from_le_bytes(post_from.data[64..72].try_into().unwrap());
+        assert_eq!(
+            post_from_balance, 500,
+            "Expected from token account to have 500 tokens after transfer"
+        );
+
+        let post_to = result
+            .resulting_accounts
+            .iter()
+            .find(|(pubkey, _)| *pubkey == to)
+            .expect("Resulting account should exist")
+            .to_owned()
+            .1;
+        let post_to_balance = u64::from_le_bytes(post_to.data[64..72].try_into().unwrap());
+        assert_eq!(
+            post_to_balance, 500,
+            "Expected to token account to have 500 tokens after transfer"
         );
 
         assert!(
