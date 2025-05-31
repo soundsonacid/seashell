@@ -1,3 +1,3 @@
 # Seashell
 
-Seashell is a set of configurable & lightweight SVM developer tools.  Seashell aims to be simple to use, powerful, and easily configurable.
+Seashell is a toolkit for testing, benchmarking, & profiling SVM programs.
