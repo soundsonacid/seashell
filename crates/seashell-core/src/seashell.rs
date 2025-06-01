@@ -55,7 +55,10 @@ impl Seashell {
         // TODO: revisit precision of this logic
         // do we need to set up processing environment?
         for builtin in BUILTINS {
-            if builtin.enable_feature_id.is_none() {
+            if builtin
+                .enable_feature_id
+                .is_none_or(|feature_id| seashell.feature_set.is_active(&feature_id))
+            {
                 // register builtin..
                 let builtin_program =
                     ProgramCacheEntry::new_builtin(0, builtin.name.len(), builtin.entrypoint);
@@ -63,7 +66,11 @@ impl Seashell {
                     .accounts_db
                     .programs
                     .replenish(builtin.program_id, Arc::new(builtin_program));
-                seashell.accounts_db.set_account_mock(builtin.program_id);
+                let mut account_shared_data =
+                    AccountSharedData::new(1, 0, &solana_sdk_ids::native_loader::id());
+                account_shared_data.set_executable(true);
+                seashell
+                    .set_account_from_account_shared_data(builtin.program_id, account_shared_data);
             }
         }
 
@@ -130,8 +137,7 @@ impl Seashell {
             &mut LoadProgramMetrics::default(),
         )
         .expect(&format!("Failed to load program {} from bytes", program_id));
-        self.accounts_db
-            .set_account(program_id, program_account_shared_data);
+        self.set_account_from_account_shared_data(program_id, program_account_shared_data);
         self.accounts_db
             .programs
             .replenish(program_id, Arc::new(program_cache_entry));
@@ -211,7 +217,10 @@ impl Seashell {
                                     .to_owned();
 
                                 if self.config.memoize {
-                                    self.accounts_db.set_account(*pubkey, account.clone());
+                                    self.set_account_from_account_shared_data(
+                                        *pubkey,
+                                        account.clone(),
+                                    );
                                 }
 
                                 (*pubkey, account.into())
@@ -245,11 +254,19 @@ impl Seashell {
             .account_maybe(&pubkey)
             .unwrap_or_else(|| AccountSharedData::new(0, 0, &solana_sdk_ids::system_program::id()));
         account.set_lamports(account.lamports() + amount);
-        self.accounts_db.set_account(pubkey, account);
+        self.set_account_from_account_shared_data(pubkey, account);
     }
 
     pub fn account(&self, pubkey: &Pubkey) -> Account {
         self.accounts_db.account(pubkey).into()
+    }
+
+    pub fn set_account_from_account_shared_data(
+        &mut self,
+        pubkey: Pubkey,
+        account: AccountSharedData,
+    ) {
+        self.accounts_db.set_account(pubkey, account);
     }
 }
 
