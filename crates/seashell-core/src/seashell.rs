@@ -1,17 +1,12 @@
-use std::sync::Arc;
-
 use agave_feature_set::FeatureSet;
 use agave_precompiles::get_precompiles;
 use solana_account::{Account, AccountSharedData, ReadableAccount, WritableAccount};
-use solana_bpf_loader_program::syscalls::create_program_runtime_environment_v1;
-use solana_builtins::BUILTINS;
 use solana_compute_budget::compute_budget::ComputeBudget;
 use solana_fee_structure::FeeStructure;
 use solana_hash::Hash;
 use solana_instruction::Instruction;
 use solana_instruction::error::InstructionError;
 use solana_program_runtime::invoke_context::{EnvironmentConfig, InvokeContext};
-use solana_program_runtime::loaded_programs::{LoadProgramMetrics, ProgramCacheEntry};
 use solana_pubkey::Pubkey;
 use solana_timings::ExecuteTimings;
 use solana_transaction_context::TransactionContext;
@@ -52,27 +47,7 @@ impl Seashell {
             feature_set: FeatureSet::all_enabled(),
         };
 
-        // TODO: revisit precision of this logic
-        // do we need to set up processing environment?
-        for builtin in BUILTINS {
-            if builtin
-                .enable_feature_id
-                .is_none_or(|feature_id| seashell.feature_set.is_active(&feature_id))
-            {
-                // register builtin..
-                let builtin_program =
-                    ProgramCacheEntry::new_builtin(0, builtin.name.len(), builtin.entrypoint);
-                seashell
-                    .accounts_db
-                    .programs
-                    .replenish(builtin.program_id, Arc::new(builtin_program));
-                let mut account_shared_data =
-                    AccountSharedData::new(1, 0, &solana_sdk_ids::native_loader::id());
-                account_shared_data.set_executable(true);
-                seashell
-                    .set_account_from_account_shared_data(builtin.program_id, account_shared_data);
-            }
-        }
+        seashell.accounts_db.load_builtins(&seashell.feature_set);
 
         seashell.load_spl();
         seashell.load_precompiles();
@@ -95,52 +70,13 @@ impl Seashell {
     }
 
     pub fn load_program_from_bytes(&mut self, program_id: Pubkey, bytes: &[u8]) {
-        self.load_program_from_bytes_with_loader(
+        self.accounts_db.load_program_from_bytes_with_loader(
             program_id,
             bytes,
             solana_sdk_ids::bpf_loader::id(),
+            &self.feature_set,
+            &self.compute_budget,
         );
-    }
-
-    pub fn load_program_from_bytes_with_loader(
-        &mut self,
-        program_id: Pubkey,
-        bytes: &[u8],
-        loader: Pubkey,
-    ) {
-        let current_slot = self.accounts_db.sysvars.clock().slot;
-        let account_size = bytes.len();
-        let minimum_balance_for_rent_exemption = self
-            .accounts_db
-            .sysvars
-            .rent()
-            .minimum_balance(account_size);
-        let mut program_account_shared_data =
-            AccountSharedData::new(minimum_balance_for_rent_exemption, account_size, &loader);
-        program_account_shared_data.set_executable(true);
-        let program_runtime_environment = Arc::new(
-            create_program_runtime_environment_v1(
-                &self.feature_set,
-                &self.compute_budget,
-                false,
-                false,
-            )
-            .expect("Failed to create program runtime environment"),
-        );
-        let program_cache_entry = ProgramCacheEntry::new(
-            &loader,
-            program_runtime_environment,
-            current_slot,
-            current_slot,
-            bytes,
-            account_size,
-            &mut LoadProgramMetrics::default(),
-        )
-        .expect(&format!("Failed to load program {} from bytes", program_id));
-        self.set_account_from_account_shared_data(program_id, program_account_shared_data);
-        self.accounts_db
-            .programs
-            .replenish(program_id, Arc::new(program_cache_entry));
     }
 
     pub fn process_instruction(&mut self, ixn: Instruction) -> InstructionProcessingResult {
@@ -155,8 +91,6 @@ impl Seashell {
             self.compute_budget.max_instruction_trace_length,
         );
 
-        // get correct loader
-        // process precompile vs regular program
         let instruction_accounts = compile_accounts_for_instruction(&ixn);
 
         let mut invoke_context = InvokeContext::new(
@@ -204,7 +138,7 @@ impl Seashell {
                     "Instruction processed successfully, compute units consumed: {}",
                     compute_units_consumed
                 );
-                let resulting_accounts: Vec<(Pubkey, Account)> = transaction_accounts
+                let post_execution_accounts: Vec<(Pubkey, Account)> = transaction_accounts
                     .iter()
                     .map(|(pubkey, account_shared_data)| {
                         transaction_context
@@ -233,7 +167,7 @@ impl Seashell {
                     compute_units_consumed,
                     return_data,
                     error: None,
-                    resulting_accounts,
+                    post_execution_accounts,
                 }
             }
             Err(e) => {
@@ -242,7 +176,7 @@ impl Seashell {
                     compute_units_consumed,
                     return_data,
                     error: Some(InstructionProcessingError::InstructionError(e)),
-                    resulting_accounts: vec![],
+                    post_execution_accounts: Vec::default(),
                 }
             }
         }
@@ -261,6 +195,10 @@ impl Seashell {
         self.accounts_db.account(pubkey).into()
     }
 
+    pub fn set_account(&mut self, pubkey: Pubkey, account: Account) {
+        self.accounts_db.set_account(pubkey, account.into());
+    }
+
     pub fn set_account_from_account_shared_data(
         &mut self,
         pubkey: Pubkey,
@@ -274,7 +212,7 @@ pub struct InstructionProcessingResult {
     pub compute_units_consumed: u64,
     pub return_data: Vec<u8>,
     pub error: Option<InstructionProcessingError>,
-    pub resulting_accounts: Vec<(Pubkey, Account)>,
+    pub post_execution_accounts: Vec<(Pubkey, Account)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -333,6 +271,7 @@ mod tests {
 
     #[test]
     fn test_native_transfer() {
+        crate::set_log();
         let mut seashell = Seashell::new();
 
         let from = solana_pubkey::Pubkey::new_unique();
@@ -356,7 +295,7 @@ mod tests {
         assert_eq!(result.compute_units_consumed, 150);
 
         let post_from = result
-            .resulting_accounts
+            .post_execution_accounts
             .iter()
             .find(|(pubkey, _)| *pubkey == from)
             .expect("Resulting account should exist")
@@ -369,7 +308,7 @@ mod tests {
         );
 
         let post_to = result
-            .resulting_accounts
+            .post_execution_accounts
             .iter()
             .find(|(pubkey, _)| *pubkey == to)
             .expect("Resulting account should exist")
@@ -390,6 +329,7 @@ mod tests {
 
     #[test]
     fn test_spl_transfer() {
+        crate::set_log();
         let mut seashell = Seashell::new();
         let from: Pubkey = solana_pubkey::Pubkey::new_unique();
         let to = solana_pubkey::Pubkey::new_unique();
@@ -421,7 +361,7 @@ mod tests {
         assert_eq!(result.compute_units_consumed, 4644);
 
         let post_from = result
-            .resulting_accounts
+            .post_execution_accounts
             .iter()
             .find(|(pubkey, _)| *pubkey == from)
             .expect("Resulting account should exist")
@@ -434,7 +374,7 @@ mod tests {
         );
 
         let post_to = result
-            .resulting_accounts
+            .post_execution_accounts
             .iter()
             .find(|(pubkey, _)| *pubkey == to)
             .expect("Resulting account should exist")
@@ -455,6 +395,7 @@ mod tests {
 
     #[test]
     fn test_memoize() {
+        crate::set_log();
         let mut seashell = Seashell::new_with_config(Config { memoize: true });
 
         let from = solana_pubkey::Pubkey::new_unique();
@@ -493,6 +434,7 @@ mod tests {
 
     #[test]
     fn test_precompiles() {
+        crate::set_log();
         let mut seashell = Seashell::new();
 
         // ed25519 precompile

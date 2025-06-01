@@ -6,3 +6,7 @@ pub mod spl;
 pub mod sysvar;
 
 pub use seashell::*;
+
+pub fn set_log() {
+    unsafe { std::env::set_var("RUST_LOG", "debug") }
+}

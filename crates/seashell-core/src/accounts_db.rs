@@ -1,8 +1,15 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
-use solana_account::{AccountSharedData, ReadableAccount};
+use agave_feature_set::FeatureSet;
+use solana_account::{AccountSharedData, ReadableAccount, WritableAccount};
+use solana_bpf_loader_program::syscalls::create_program_runtime_environment_v1;
+use solana_builtins::BUILTINS;
+use solana_compute_budget::compute_budget::ComputeBudget;
 use solana_instruction::Instruction;
-use solana_program_runtime::loaded_programs::ProgramCacheForTxBatch;
+use solana_program_runtime::loaded_programs::{
+    LoadProgramMetrics, ProgramCacheEntry, ProgramCacheForTxBatch,
+};
 use solana_program_runtime::sysvar_cache::SysvarCache;
 use solana_pubkey::Pubkey;
 use solana_transaction_context::TransactionAccount;
@@ -92,5 +99,58 @@ impl AccountsDb {
     pub fn set_account_mock(&mut self, pubkey: Pubkey) {
         let account = mock_account_shared_data(pubkey);
         self.set_account(pubkey, account);
+    }
+
+    // TODO: revisit precision of this logic
+    // do we need to set up processing environment?
+    pub fn load_builtins(&mut self, feature_set: &FeatureSet) {
+        for builtin in BUILTINS {
+            if builtin
+                .enable_feature_id
+                .is_none_or(|feature_id| feature_set.is_active(&feature_id))
+            {
+                let builtin_program =
+                    ProgramCacheEntry::new_builtin(0, builtin.name.len(), builtin.entrypoint);
+                self.programs
+                    .replenish(builtin.program_id, Arc::new(builtin_program));
+                let mut account_shared_data =
+                    AccountSharedData::new(1, 0, &solana_sdk_ids::native_loader::id());
+                account_shared_data.set_executable(true);
+                self.set_account(builtin.program_id, account_shared_data);
+            }
+        }
+    }
+
+    pub fn load_program_from_bytes_with_loader(
+        &mut self,
+        program_id: Pubkey,
+        bytes: &[u8],
+        loader: Pubkey,
+        feature_set: &FeatureSet,
+        compute_budget: &ComputeBudget,
+    ) {
+        let current_slot = self.sysvars.clock().slot;
+        let account_size = bytes.len();
+        let minimum_balance_for_rent_exemption = self.sysvars.rent().minimum_balance(account_size);
+        let mut program_account_shared_data =
+            AccountSharedData::new(minimum_balance_for_rent_exemption, account_size, &loader);
+        program_account_shared_data.set_executable(true);
+        let program_runtime_environment = Arc::new(
+            create_program_runtime_environment_v1(&feature_set, &compute_budget, false, false)
+                .expect("Failed to create program runtime environment"),
+        );
+        let program_cache_entry = ProgramCacheEntry::new(
+            &loader,
+            program_runtime_environment,
+            current_slot,
+            current_slot,
+            bytes,
+            account_size,
+            &mut LoadProgramMetrics::default(),
+        )
+        .expect(&format!("Failed to load program {} from bytes", program_id));
+        self.set_account(program_id, program_account_shared_data);
+        self.programs
+            .replenish(program_id, Arc::new(program_cache_entry));
     }
 }
