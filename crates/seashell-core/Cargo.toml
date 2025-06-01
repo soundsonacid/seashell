@@ -1,0 +1,30 @@
+[package]
+name = "seashell"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+indexmap = { workspace = true }
+solana-account = { workspace = true }
+solana-bpf-loader-program = { workspace = true }
+solana-builtins = { workspace = true }
+solana-clock = { workspace = true }
+solana-compute-budget = { workspace = true }
+solana-epoch-rewards = { workspace = true }
+solana-epoch-schedule = { workspace = true }
+solana-feature-set = { workspace = true }
+solana-fee-structure = { workspace = true }
+solana-hash = { workspace = true }
+solana-instruction = { workspace = true }
+solana-last-restart-slot = { workspace = true }
+solana-logger = { workspace = true }
+solana-program-runtime = { workspace = true }
+solana-pubkey = { workspace = true }
+solana-rent = { workspace = true }
+solana-sdk-ids = { workspace = true }
+solana-slot-hashes = { workspace = true }
+solana-stake-interface = { workspace = true }
+solana-sysvar-id = { workspace = true }
+solana-timings = { workspace = true }
+solana-transaction = { workspace = true }
+solana-transaction-context = { workspace = true }

@@ -1,9 +1,8 @@
-[package]
-name = "seashell"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+members = ["crates/seashell-core"]
+resolver = "2"
 
-[dependencies]
+[workspace.dependencies]
 indexmap = "2.9.0"
 solana-account = "=2.2.1"
 solana-bpf-loader-program = "2.2.1"

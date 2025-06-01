@@ -86,6 +86,12 @@ impl Seashell {
         seashell
     }
 
+    pub fn new_with_config(config: Config) -> Self {
+        let mut seashell = Seashell::new();
+        seashell.config = config;
+        seashell
+    }
+
     pub fn load_spl(mut self) -> Self {
         crate::spl::load(&mut self);
         self
@@ -194,17 +200,22 @@ impl Seashell {
                         transaction_context
                             .find_index_of_account(&pubkey)
                             .map(|idx| {
-                                let account: Account = transaction_context
+                                let account = transaction_context
                                     .get_account_at_index(idx)
                                     .expect("Account should exist")
                                     .borrow()
-                                    .to_owned()
-                                    .into();
-                                (*pubkey, account)
+                                    .to_owned();
+
+                                if self.config.memoize {
+                                    self.accounts_db.set_account(*pubkey, account.clone());
+                                }
+
+                                (*pubkey, account.into())
                             })
                             .unwrap_or((*pubkey, account_shared_data.to_owned().into()))
                     })
                     .collect();
+
                 InstructionProcessingResult {
                     compute_units_consumed,
                     return_data,
@@ -231,6 +242,10 @@ impl Seashell {
             .unwrap_or_else(|| AccountSharedData::new(0, 0, &solana_sdk_ids::system_program::id()));
         account.set_lamports(account.lamports() + amount);
         self.accounts_db.set_account(pubkey, account);
+    }
+
+    pub fn account(&self, pubkey: &Pubkey) -> Account {
+        self.accounts_db.account(pubkey).into()
     }
 }
 
@@ -414,6 +429,44 @@ mod tests {
             result.return_data.is_empty(),
             "Expected no return data, got: {:?}",
             result.return_data
+        );
+    }
+
+    #[test]
+    fn test_memoize() {
+        let mut seashell = Seashell::new_with_config(Config { memoize: true });
+
+        let from = solana_pubkey::Pubkey::new_unique();
+        let to = solana_pubkey::Pubkey::new_unique();
+        seashell.airdrop(from, 1000);
+        seashell.accounts_db.set_account_mock(to);
+        println!("Airdropped 1000 lamports to {}", from);
+
+        let mut data = Vec::with_capacity(12);
+        data.extend_from_slice(&2u32.to_le_bytes());
+        data.extend_from_slice(&500u64.to_le_bytes());
+
+        let ixn = Instruction {
+            program_id: solana_sdk_ids::system_program::id(),
+            accounts: vec![AccountMeta::new(from, true), AccountMeta::new(to, false)],
+            data,
+        };
+
+        let result = seashell.process_instruction(ixn);
+        assert!(result.error.is_none(), "Expected no error, got: {:?}", result.error);
+        assert_eq!(result.compute_units_consumed, 150);
+
+        let post_from = seashell.account(&from);
+        assert_eq!(
+            post_from.lamports(),
+            500,
+            "Expected from account to have 500 lamports after transfer"
+        );
+        let post_to = seashell.account(&to);
+        assert_eq!(
+            post_to.lamports(),
+            500,
+            "Expected to account to have 500 lamports after transfer"
         );
     }
 }
