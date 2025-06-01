@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+agave-feature-set = { workspace = true }
+agave-precompiles = { workspace = true }
 indexmap = { workspace = true }
 solana-account = { workspace = true }
 solana-bpf-loader-program = { workspace = true }
@@ -12,7 +14,6 @@ solana-clock = { workspace = true }
 solana-compute-budget = { workspace = true }
 solana-epoch-rewards = { workspace = true }
 solana-epoch-schedule = { workspace = true }
-solana-feature-set = { workspace = true }
 solana-fee-structure = { workspace = true }
 solana-hash = { workspace = true }
 solana-instruction = { workspace = true }
@@ -28,3 +29,12 @@ solana-sysvar-id = { workspace = true }
 solana-timings = { workspace = true }
 solana-transaction = { workspace = true }
 solana-transaction-context = { workspace = true }
+
+[dev-dependencies]
+ed25519-dalek = { workspace = true }
+libsecp256k1 = { workspace = true }
+openssl = { workspace = true }
+rand = { workspace = true }
+solana-ed25519-program = { workspace = true }
+solana-secp256k1-program = { workspace = true, features = ["bincode"] }
+solana-secp256r1-program = { workspace = true }

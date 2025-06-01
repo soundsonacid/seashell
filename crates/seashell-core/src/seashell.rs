@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
+use agave_feature_set::FeatureSet;
+use agave_precompiles::get_precompiles;
 use solana_account::{Account, AccountSharedData, ReadableAccount, WritableAccount};
 use solana_bpf_loader_program::syscalls::create_program_runtime_environment_v1;
 use solana_builtins::BUILTINS;
 use solana_compute_budget::compute_budget::ComputeBudget;
-use solana_feature_set::FeatureSet;
 use solana_fee_structure::FeeStructure;
 use solana_hash::Hash;
 use solana_instruction::Instruction;
@@ -33,22 +34,8 @@ pub struct Seashell {
 
 impl Seashell {
     // TODO:
-    // load precompiles, spl programs
     // set_account, load_program, etc. API
     // new_from_snapshot, etc. API
-
-    /// This is likely not what you want to use if you don't need to set up the full environment manually.
-    /// Consider using `Seashell::new()` instead.
-    pub fn new_empty() -> Self {
-        Seashell {
-            config: Config::default(),
-            accounts_db: AccountsDb::new(),
-            compute_budget: ComputeBudget::default(),
-            fee_structure: FeeStructure::default(),
-            feature_set: FeatureSet::default(),
-        }
-    }
-
     pub fn new() -> Self {
         #[rustfmt::skip]
         solana_logger::setup_with_default(
@@ -62,11 +49,10 @@ impl Seashell {
             accounts_db: AccountsDb::new(),
             compute_budget: ComputeBudget::default(),
             fee_structure: FeeStructure::default(),
-            feature_set: FeatureSet::default(),
+            feature_set: FeatureSet::all_enabled(),
         };
 
         // TODO: revisit precision of this logic
-        // TODO: correct loaders
         // do we need to set up processing environment?
         for builtin in BUILTINS {
             if builtin.enable_feature_id.is_none() {
@@ -81,7 +67,8 @@ impl Seashell {
             }
         }
 
-        let seashell = seashell.load_spl();
+        seashell.load_spl();
+        seashell.load_precompiles();
 
         seashell
     }
@@ -92,9 +79,12 @@ impl Seashell {
         seashell
     }
 
-    pub fn load_spl(mut self) -> Self {
-        crate::spl::load(&mut self);
-        self
+    pub fn load_spl(&mut self) {
+        crate::spl::load(self);
+    }
+
+    pub fn load_precompiles(&mut self) {
+        crate::precompiles::load(self);
     }
 
     pub fn load_program_from_bytes(&mut self, program_id: Pubkey, bytes: &[u8]) {
@@ -179,13 +169,27 @@ impl Seashell {
         );
 
         let mut compute_units_consumed = 0;
-        let result = invoke_context.process_instruction(
-            &ixn.data,
-            &instruction_accounts,
-            &[INSTRUCTION_PROGRAM_ID_INDEX],
-            &mut compute_units_consumed,
-            &mut ExecuteTimings::default(),
-        );
+
+        let result = if let Some(precompile) = get_precompiles()
+            .iter()
+            .find(|precompile| precompile.program_id == ixn.program_id)
+        {
+            invoke_context.process_precompile(
+                precompile,
+                &ixn.data,
+                &instruction_accounts,
+                &[INSTRUCTION_PROGRAM_ID_INDEX],
+                std::iter::once(ixn.data.as_slice()),
+            )
+        } else {
+            invoke_context.process_instruction(
+                &ixn.data,
+                &instruction_accounts,
+                &[INSTRUCTION_PROGRAM_ID_INDEX],
+                &mut compute_units_consumed,
+                &mut ExecuteTimings::default(),
+            )
+        };
 
         let return_data = transaction_context.get_return_data().1.to_owned();
         match result {
@@ -468,5 +472,36 @@ mod tests {
             500,
             "Expected to account to have 500 lamports after transfer"
         );
+    }
+
+    #[test]
+    fn test_precompiles() {
+        let mut seashell = Seashell::new();
+
+        // ed25519 precompile
+        let secret_key = ed25519_dalek::Keypair::generate(&mut rand::thread_rng());
+        let ixn = solana_ed25519_program::new_ed25519_instruction(&secret_key, b"test");
+
+        let result = seashell.process_instruction(ixn);
+        assert!(result.error.is_none(), "Expected no error, got: {:?}", result.error);
+        assert_eq!(result.compute_units_consumed, 0);
+
+        // secp256k1 precompile
+        let secret_key = libsecp256k1::SecretKey::random(&mut rand::thread_rng());
+        let ixn = solana_secp256k1_program::new_secp256k1_instruction(&secret_key, b"test");
+
+        let result = seashell.process_instruction(ixn);
+        assert!(result.error.is_none(), "Expected no error, got: {:?}", result.error);
+        assert_eq!(result.compute_units_consumed, 0);
+
+        // secp256r1 precompile
+        let curve_name = openssl::nid::Nid::X9_62_PRIME256V1;
+        let group = openssl::ec::EcGroup::from_curve_name(curve_name).unwrap();
+        let secret_key = openssl::ec::EcKey::generate(&group).unwrap();
+        let ixn = solana_secp256r1_program::new_secp256r1_instruction(b"test", secret_key).unwrap();
+
+        let result = seashell.process_instruction(ixn);
+        assert!(result.error.is_none(), "Expected no error, got: {:?}", result.error);
+        assert_eq!(result.compute_units_consumed, 0);
     }
 }
