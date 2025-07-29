@@ -4,7 +4,6 @@ use std::sync::Arc;
 use agave_feature_set::FeatureSet;
 use solana_account::{AccountSharedData, ReadableAccount, WritableAccount};
 use solana_bpf_loader_program::syscalls::create_program_runtime_environment_v1;
-use solana_builtins::BUILTINS;
 use solana_compute_budget::compute_budget::ComputeBudget;
 use solana_instruction::Instruction;
 use solana_program_runtime::loaded_programs::{
@@ -20,6 +19,7 @@ pub fn mock_account_shared_data(pubkey: Pubkey) -> AccountSharedData {
     AccountSharedData::new(0, 0, &pubkey)
 }
 
+#[derive(Default)]
 pub struct AccountsDb {
     pub overrides: HashMap<Pubkey, AccountSharedData>,
     pub accounts: HashMap<Pubkey, AccountSharedData>,
@@ -28,19 +28,9 @@ pub struct AccountsDb {
 }
 
 impl AccountsDb {
-    pub fn new() -> Self {
-        Self {
-            overrides: HashMap::new(),
-            accounts: HashMap::new(),
-            programs: ProgramCacheForTxBatch::default(),
-            sysvars: Sysvars::default(),
-        }
-    }
-
     // TODO: make sysvars part of self.accounts
     // TODO: use Account instead of AccountSharedData
     pub fn account_maybe(&self, pubkey: &Pubkey) -> Option<AccountSharedData> {
-        println!("Fetching account for pubkey: {}", pubkey);
         if self.sysvars.is_sysvar(pubkey) {
             return Some(self.sysvars.get(pubkey));
         }
@@ -77,7 +67,7 @@ impl AccountsDb {
             } else {
                 // If not, check our AccountsDb (which will always contain the sysvar as a fallback)
                 // Optionality here is to avoid supporting Fees sysvar, which is deprecated but expected by SysvarCache
-                let account = self.account_maybe(&sysvar);
+                let account = self.account_maybe(sysvar);
                 let data = account.map(|a| a.data().to_owned()).unwrap_or_default();
                 set_sysvar(&data);
             }
@@ -104,7 +94,7 @@ impl AccountsDb {
     // TODO: revisit precision of this logic
     // do we need to set up processing environment?
     pub fn load_builtins(&mut self, feature_set: &FeatureSet) {
-        for builtin in BUILTINS {
+        for builtin in solana_builtins::BUILTINS {
             if builtin
                 .enable_feature_id
                 .is_none_or(|feature_id| feature_set.is_active(&feature_id))
@@ -136,8 +126,13 @@ impl AccountsDb {
             AccountSharedData::new(minimum_balance_for_rent_exemption, account_size, &loader);
         program_account_shared_data.set_executable(true);
         let program_runtime_environment = Arc::new(
-            create_program_runtime_environment_v1(&feature_set, &compute_budget, false, false)
-                .expect("Failed to create program runtime environment"),
+            create_program_runtime_environment_v1(
+                &feature_set.runtime_features(),
+                &compute_budget.to_budget(),
+                false,
+                false,
+            )
+            .expect("Failed to create program runtime environment"),
         );
         let program_cache_entry = ProgramCacheEntry::new(
             &loader,
@@ -148,7 +143,7 @@ impl AccountsDb {
             account_size,
             &mut LoadProgramMetrics::default(),
         )
-        .expect(&format!("Failed to load program {} from bytes", program_id));
+        .expect(&format!("Failed to load program {program_id} from bytes"));
         self.set_account(program_id, program_account_shared_data);
         self.programs
             .replenish(program_id, Arc::new(program_cache_entry));

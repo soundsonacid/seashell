@@ -1,3 +1,4 @@
+#![allow(clippy::expect_fun_call)]
 pub mod accounts_db;
 pub mod compile;
 pub mod precompiles;

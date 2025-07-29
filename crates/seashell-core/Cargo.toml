@@ -14,20 +14,21 @@ solana-clock = { workspace = true }
 solana-compute-budget = { workspace = true }
 solana-epoch-rewards = { workspace = true }
 solana-epoch-schedule = { workspace = true }
-solana-fee-structure = { workspace = true }
 solana-hash = { workspace = true }
 solana-instruction = { workspace = true }
-solana-last-restart-slot = { workspace = true }
+solana-log-collector = { workspace = true }
 solana-logger = { workspace = true }
-solana-program-runtime = { workspace = true }
+solana-precompile-error.workspace = true
+solana-program-runtime.workspace = true
 solana-pubkey = { workspace = true }
 solana-rent = { workspace = true }
 solana-sdk-ids = { workspace = true }
 solana-slot-hashes = { workspace = true }
 solana-stake-interface = { workspace = true }
+solana-svm-callback = "2.3.6"
+solana-sysvar = { workspace = true }
 solana-sysvar-id = { workspace = true }
 solana-timings = { workspace = true }
-solana-transaction = { workspace = true }
 solana-transaction-context = { workspace = true }
 
 [dev-dependencies]

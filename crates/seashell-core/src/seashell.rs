@@ -1,13 +1,17 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use agave_feature_set::FeatureSet;
-use agave_precompiles::get_precompiles;
 use solana_account::{Account, AccountSharedData, ReadableAccount, WritableAccount};
 use solana_compute_budget::compute_budget::ComputeBudget;
-use solana_fee_structure::FeeStructure;
 use solana_hash::Hash;
 use solana_instruction::Instruction;
 use solana_instruction::error::InstructionError;
+use solana_log_collector::LogCollector;
+use solana_precompile_error::PrecompileError;
 use solana_program_runtime::invoke_context::{EnvironmentConfig, InvokeContext};
 use solana_pubkey::Pubkey;
+use solana_svm_callback::InvokeContextCallback;
 use solana_timings::ExecuteTimings;
 use solana_transaction_context::TransactionContext;
 
@@ -23,8 +27,44 @@ pub struct Seashell {
     pub config: Config,
     pub accounts_db: AccountsDb,
     pub compute_budget: ComputeBudget,
-    pub fee_structure: FeeStructure,
     pub feature_set: FeatureSet,
+    pub log_collector: Option<Rc<RefCell<LogCollector>>>,
+}
+
+impl Default for Seashell {
+    fn default() -> Self {
+        Seashell {
+            config: Config::default(),
+            accounts_db: AccountsDb::default(),
+            compute_budget: ComputeBudget::default(),
+            feature_set: FeatureSet::all_enabled(),
+            log_collector: None,
+        }
+    }
+}
+struct SeashellInvokeContextCallback<'a> {
+    feature_set: &'a FeatureSet,
+}
+
+impl InvokeContextCallback for SeashellInvokeContextCallback<'_> {
+    fn is_precompile(&self, program_id: &Pubkey) -> bool {
+        agave_precompiles::is_precompile(program_id, |feature| self.feature_set.is_active(feature))
+    }
+
+    fn process_precompile(
+        &self,
+        program_id: &Pubkey,
+        data: &[u8],
+        instruction_datas: Vec<&[u8]>,
+    ) -> Result<(), PrecompileError> {
+        if let Some(precompile) = agave_precompiles::get_precompile(program_id, |feature_id| {
+            self.feature_set.is_active(feature_id)
+        }) {
+            precompile.verify(data, &instruction_datas, self.feature_set)
+        } else {
+            Err(PrecompileError::InvalidPublicKey)
+        }
+    }
 }
 
 impl Seashell {
@@ -39,13 +79,7 @@ impl Seashell {
              solana_runtime::system_instruction_processor=trace",
         );
 
-        let mut seashell = Seashell {
-            config: Config::default(),
-            accounts_db: AccountsDb::new(),
-            compute_budget: ComputeBudget::default(),
-            fee_structure: FeeStructure::default(),
-            feature_set: FeatureSet::all_enabled(),
-        };
+        let mut seashell = Seashell::default();
 
         seashell.accounts_db.load_builtins(&seashell.feature_set);
 
@@ -93,29 +127,28 @@ impl Seashell {
 
         let instruction_accounts = compile_accounts_for_instruction(&ixn);
 
+        let epoch_stake_callback = SeashellInvokeContextCallback { feature_set: &self.feature_set };
+        let runtime_features = self.feature_set.runtime_features();
         let mut invoke_context = InvokeContext::new(
             &mut transaction_context,
             &mut self.accounts_db.programs,
             EnvironmentConfig::new(
                 Hash::default(),
-                0,
-                0,
-                &|_| 0,
-                std::sync::Arc::new(self.feature_set.clone()),
+                /* blockhash_lamports_per_signature */ 5000, // The default value
+                &epoch_stake_callback,
+                &runtime_features,
                 &sysvar_cache,
             ),
-            None,
-            self.compute_budget,
+            self.log_collector.clone(),
+            self.compute_budget.to_budget(),
+            self.compute_budget.to_cost(),
         );
 
         let mut compute_units_consumed = 0;
 
-        let result = if let Some(precompile) = get_precompiles()
-            .iter()
-            .find(|precompile| precompile.program_id == ixn.program_id)
-        {
+        let result = if invoke_context.is_precompile(&ixn.program_id) {
             invoke_context.process_precompile(
-                precompile,
+                &ixn.program_id,
                 &ixn.data,
                 &instruction_accounts,
                 &[INSTRUCTION_PROGRAM_ID_INDEX],
@@ -134,15 +167,11 @@ impl Seashell {
         let return_data = transaction_context.get_return_data().1.to_owned();
         match result {
             Ok(_) => {
-                println!(
-                    "Instruction processed successfully, compute units consumed: {}",
-                    compute_units_consumed
-                );
                 let post_execution_accounts: Vec<(Pubkey, Account)> = transaction_accounts
                     .iter()
                     .map(|(pubkey, account_shared_data)| {
                         transaction_context
-                            .find_index_of_account(&pubkey)
+                            .find_index_of_account(pubkey)
                             .map(|idx| {
                                 let account = transaction_context
                                     .get_account_at_index(idx)
@@ -278,7 +307,7 @@ mod tests {
         let to = solana_pubkey::Pubkey::new_unique();
         seashell.airdrop(from, 1000);
         seashell.accounts_db.set_account_mock(to);
-        println!("Airdropped 1000 lamports to {}", from);
+        println!("Airdropped 1000 lamports to {from}");
 
         let mut data = Vec::with_capacity(12);
         data.extend_from_slice(&2u32.to_le_bytes());
@@ -402,7 +431,7 @@ mod tests {
         let to = solana_pubkey::Pubkey::new_unique();
         seashell.airdrop(from, 1000);
         seashell.accounts_db.set_account_mock(to);
-        println!("Airdropped 1000 lamports to {}", from);
+        println!("Airdropped 1000 lamports to {from}");
 
         let mut data = Vec::with_capacity(12);
         data.extend_from_slice(&2u32.to_le_bytes());
@@ -433,6 +462,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_precompiles() {
         crate::set_log();
         let mut seashell = Seashell::new();

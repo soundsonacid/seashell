@@ -231,13 +231,11 @@ mod tests {
             let acc = &result[i];
             assert_eq!(
                 acc.index_in_transaction as usize, *exp_tx_idx,
-                "Wrong transaction index at position {}",
-                i
+                "Wrong transaction index at position {i}",
             );
             assert_eq!(
                 acc.index_in_callee as usize, *exp_callee_idx,
-                "Wrong callee index at position {}",
-                i
+                "Wrong callee index at position {i}",
             );
         }
 

@@ -3,11 +3,11 @@ use solana_clock::Clock;
 use solana_epoch_rewards::EpochRewards;
 use solana_epoch_schedule::EpochSchedule;
 use solana_hash::Hash;
-use solana_last_restart_slot::LastRestartSlot;
 use solana_pubkey::Pubkey;
 use solana_rent::Rent;
 use solana_slot_hashes::{MAX_ENTRIES, SlotHashes};
 use solana_stake_interface::stake_history::{StakeHistory, StakeHistoryEntry};
+use solana_sysvar::last_restart_slot::LastRestartSlot;
 use solana_sysvar_id::SysvarId;
 
 pub struct Sysvars {
@@ -101,7 +101,7 @@ impl Sysvars {
             _ if sysvar == &LastRestartSlot::id() => {
                 AccountSharedData::new(0, 0, &LastRestartSlot::id())
             }
-            _ => panic!("Unknown sysvar: {}", sysvar),
+            _ => panic!("Unknown sysvar: {sysvar}"),
         }
     }
 }
