@@ -7,6 +7,7 @@ edition = "2024"
 agave-feature-set = { workspace = true }
 agave-precompiles = { workspace = true }
 indexmap = { workspace = true }
+serde_json = { workspace = true }
 solana-account = { workspace = true }
 solana-bpf-loader-program = { workspace = true }
 solana-builtins = { workspace = true }
@@ -25,11 +26,12 @@ solana-rent = { workspace = true }
 solana-sdk-ids = { workspace = true }
 solana-slot-hashes = { workspace = true }
 solana-stake-interface = { workspace = true }
-solana-svm-callback = "2.3.6"
+solana-svm-callback = { workspace = true }
 solana-sysvar = { workspace = true }
 solana-sysvar-id = { workspace = true }
 solana-timings = { workspace = true }
 solana-transaction-context = { workspace = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 ed25519-dalek = { workspace = true }

@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use agave_feature_set::FeatureSet;
@@ -17,6 +18,7 @@ use solana_transaction_context::TransactionContext;
 
 use crate::accounts_db::AccountsDb;
 use crate::compile::{INSTRUCTION_PROGRAM_ID_INDEX, compile_accounts_for_instruction};
+use crate::error::SeashellError;
 
 #[derive(Default)]
 pub struct Config {
@@ -111,6 +113,45 @@ impl Seashell {
             &self.feature_set,
             &self.compute_budget,
         );
+    }
+
+    /// Attempts to locate a program `.so` in the workspace root `target/deploy` directory or the `SBF_OUT_DIR` named `<program_name>.so`.
+    pub fn load_program_from_environment(
+        &mut self,
+        program_name: &str,
+        program_id: Pubkey,
+    ) -> Result<(), SeashellError> {
+        let program_so_directory = if let Ok(out_dir) = std::env::var("SBF_OUT_DIR") {
+            // First try to read from the SBF_OUT_DIR environment variable
+            PathBuf::from(out_dir)
+        } else {
+            // If not present, attempt to locate the workspace root
+            let workspace_root = try_find_workspace_root()
+                .ok_or(SeashellError::Custom("Could not locate workspace root".to_string()))?;
+            workspace_root.join("target/deploy")
+        };
+
+        let entries = std::fs::read_dir(program_so_directory)?;
+
+        for entry_maybe in entries {
+            let entry = entry_maybe?;
+            let path = entry.path();
+
+            if path.extension().is_some_and(|ext| *ext == *"so")
+                && path.file_prefix().is_some_and(|pre| *pre == *program_name)
+            {
+                let program_bytes = std::fs::read(path)?;
+                self.accounts_db.load_program_from_bytes_with_loader(
+                    program_id,
+                    &program_bytes,
+                    solana_sdk_ids::bpf_loader::id(),
+                    &self.feature_set,
+                    &self.compute_budget,
+                );
+            }
+        }
+
+        Ok(())
     }
 
     pub fn process_instruction(&mut self, ixn: Instruction) -> InstructionProcessingResult {
@@ -248,6 +289,26 @@ pub struct InstructionProcessingResult {
 pub enum InstructionProcessingError {
     InstructionError(InstructionError),
     ProgramError,
+}
+
+fn try_find_workspace_root() -> Option<PathBuf> {
+    let cargo = std::env::var("CARGO").unwrap_or("cargo".to_owned());
+    let output = std::process::Command::new(cargo)
+        .arg("locate-project")
+        .arg("--workspace")
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let parsed: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let root = parsed["root"]
+        .as_str()
+        .unwrap()
+        .strip_suffix("Cargo.toml")?;
+
+    Some(PathBuf::from(root))
 }
 
 #[cfg(test)]
@@ -492,5 +553,39 @@ mod tests {
         let result = seashell.process_instruction(ixn);
         assert!(result.error.is_none(), "Expected no error, got: {:?}", result.error);
         assert_eq!(result.compute_units_consumed, 0);
+    }
+
+    #[test]
+    fn test_load_from_environment() {
+        crate::set_log();
+        let mut seashell = Seashell::new();
+        let spl_elfs_out_dir = try_find_workspace_root()
+            .unwrap()
+            .join("crates/seashell-core/src/spl/elfs");
+        unsafe { std::env::set_var("SBF_OUT_DIR", spl_elfs_out_dir.to_str().unwrap()) }
+
+        let tokenkeg = Pubkey::new_unique();
+        seashell
+            .load_program_from_environment("tokenkeg", tokenkeg)
+            .unwrap();
+
+        let token22 = Pubkey::new_unique();
+        seashell
+            .load_program_from_environment("token22", token22)
+            .unwrap();
+
+        let associated_token = Pubkey::new_unique();
+        seashell
+            .load_program_from_environment("associated_token", associated_token)
+            .unwrap();
+
+        assert!(seashell.accounts_db.accounts.contains_key(&tokenkeg));
+        assert!(seashell.accounts_db.accounts.contains_key(&token22));
+        assert!(
+            seashell
+                .accounts_db
+                .accounts
+                .contains_key(&associated_token)
+        );
     }
 }
