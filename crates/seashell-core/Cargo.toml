@@ -6,7 +6,6 @@ edition = "2021"
 [dependencies]
 agave-feature-set = { workspace = true }
 agave-precompiles = { workspace = true }
-env_logger = { workspace = true }
 flate2 = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
