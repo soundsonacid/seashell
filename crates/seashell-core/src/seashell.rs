@@ -291,7 +291,7 @@ pub enum InstructionProcessingError {
     ProgramError,
 }
 
-fn try_find_workspace_root() -> Option<PathBuf> {
+pub fn try_find_workspace_root() -> Option<PathBuf> {
     let cargo = std::env::var("CARGO").unwrap_or("cargo".to_owned());
     let output = std::process::Command::new(cargo)
         .arg("locate-project")
