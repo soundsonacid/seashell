@@ -161,7 +161,7 @@ impl Seashell {
     /// Accounts from the scenario will override any existing accounts.
     /// When the scenario is dropped, it will be written back to the file.
     ///
-    /// If an RPC URL is provided in the config, missing accounts will be fetched from the RPC.
+    /// If the RPC URL environment variable is set, missing accounts will be fetched from the RPC.
     pub fn load_scenario(&mut self, scenario_name: &str) {
         const ROOT: &str = env!("CARGO_MANIFEST_DIR");
         let scenario_path = PathBuf::from(ROOT).join(format!("scenarios/{scenario_name}.json.gz"));
@@ -612,21 +612,17 @@ mod tests {
 
         use tempfile::TempDir;
 
-        // Create a temporary directory for the test
         let temp_dir = TempDir::new().unwrap();
         let scenarios_dir = temp_dir.path().join("scenarios");
         fs::create_dir_all(&scenarios_dir).unwrap();
 
-        // Override CARGO_MANIFEST_DIR for this test
         let original_manifest_dir = env!("CARGO_MANIFEST_DIR");
         unsafe { std::env::set_var("CARGO_MANIFEST_DIR", temp_dir.path()) }
 
-        // Set RPC_URL for this test
         unsafe { std::env::set_var("RPC_URL", "https://api.mainnet-beta.solana.com") };
 
         let mut seashell = Seashell::new_with_config(Config { memoize: false });
 
-        // Create test accounts
         let pubkey1 = Pubkey::from_str_const("B91piBSfCBRs5rUxCMRdJEGv7tNEnFxweWcdQJHJoFpi");
         let pubkey2 = Pubkey::from_str_const("6gAnjderE13TGGFeqdPVQ438jp2FPVeyXAszxKu9y338");
 

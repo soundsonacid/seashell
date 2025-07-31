@@ -29,7 +29,7 @@ pub struct AccountsDb {
 }
 
 impl AccountsDb {
-    pub fn account_maybe(&mut self, pubkey: &Pubkey) -> Option<AccountSharedData> {
+    pub fn account_maybe(&self, pubkey: &Pubkey) -> Option<AccountSharedData> {
         if self.sysvars.is_sysvar(pubkey) {
             return Some(self.sysvars.get(pubkey));
         }
@@ -65,7 +65,7 @@ impl AccountsDb {
         accounts
     }
 
-    pub fn sysvars_for_instruction(&mut self, accounts: &[TransactionAccount]) -> SysvarCache {
+    pub fn sysvars_for_instruction(&self, accounts: &[TransactionAccount]) -> SysvarCache {
         let mut sysvar_cache = SysvarCache::default();
 
         sysvar_cache.fill_missing_entries(|sysvar, set_sysvar| {
