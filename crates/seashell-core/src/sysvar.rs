@@ -5,7 +5,7 @@ use solana_epoch_schedule::EpochSchedule;
 use solana_hash::Hash;
 use solana_pubkey::Pubkey;
 use solana_rent::Rent;
-use solana_slot_hashes::{MAX_ENTRIES, SlotHashes};
+use solana_slot_hashes::{SlotHashes, MAX_ENTRIES};
 use solana_stake_interface::stake_history::{StakeHistory, StakeHistoryEntry};
 use solana_sysvar::last_restart_slot::LastRestartSlot;
 use solana_sysvar_id::SysvarId;
