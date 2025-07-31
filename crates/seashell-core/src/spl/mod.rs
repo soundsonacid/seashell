@@ -1,4 +1,4 @@
-use solana_pubkey::{Pubkey, pubkey};
+use solana_pubkey::{pubkey, Pubkey};
 
 use crate::Seashell;
 
