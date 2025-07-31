@@ -107,6 +107,7 @@ impl Scenario {
     /// Fetch an account from RPC and store it in the scenario.
     /// Panics if RPC is not configured or if the RPC request fails.
     pub fn fetch_from_rpc(&mut self, pubkey: &Pubkey) -> AccountSharedData {
+        log::debug!("Attempting to fetch account: {pubkey}");
         let rpc_client = self.rpc_client.as_ref().expect(
             "Account not found in scenario or accounts. RPC URL must be configured to fetch \
              missing accounts.",
