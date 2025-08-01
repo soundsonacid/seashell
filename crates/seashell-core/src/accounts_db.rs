@@ -13,6 +13,7 @@ use solana_program_runtime::sysvar_cache::SysvarCache;
 use solana_pubkey::Pubkey;
 use solana_transaction_context::TransactionAccount;
 
+use crate::scenario::Scenario;
 use crate::sysvar::Sysvars;
 
 pub fn mock_account_shared_data(pubkey: Pubkey) -> AccountSharedData {
@@ -21,33 +22,40 @@ pub fn mock_account_shared_data(pubkey: Pubkey) -> AccountSharedData {
 
 #[derive(Default)]
 pub struct AccountsDb {
-    pub overrides: HashMap<Pubkey, AccountSharedData>,
+    pub scenario: Scenario,
     pub accounts: HashMap<Pubkey, AccountSharedData>,
     pub programs: ProgramCacheForTxBatch,
     pub sysvars: Sysvars,
 }
 
 impl AccountsDb {
-    // TODO: make sysvars part of self.accounts
-    // TODO: use Account instead of AccountSharedData
     pub fn account_maybe(&self, pubkey: &Pubkey) -> Option<AccountSharedData> {
         if self.sysvars.is_sysvar(pubkey) {
             return Some(self.sysvars.get(pubkey));
         }
 
-        self.overrides
-            .get(pubkey)
-            .or_else(|| self.accounts.get(pubkey))
-            .cloned()
+        // 1. Check scenario overrides
+        if let Some(account) = self.scenario.get(pubkey) {
+            return Some(account.clone());
+        }
+
+        // 2. Check regular accounts
+        if let Some(account) = self.accounts.get(pubkey) {
+            return Some(account.clone());
+        }
+
+        None
     }
 
-    pub fn account(&self, pubkey: &Pubkey) -> AccountSharedData {
+    pub fn account(&mut self, pubkey: &Pubkey) -> AccountSharedData {
         self.account_maybe(pubkey)
-            .expect("Account should exist")
-            .to_owned()
+            .unwrap_or_else(|| self.scenario.fetch_from_rpc(pubkey))
     }
 
-    pub fn accounts_for_instruction(&self, instruction: &Instruction) -> Vec<TransactionAccount> {
+    pub fn accounts_for_instruction(
+        &mut self,
+        instruction: &Instruction,
+    ) -> Vec<TransactionAccount> {
         // always insert the program_id of the instruction as the first account.
         let mut accounts = vec![(instruction.program_id, self.account(&instruction.program_id))];
         instruction.accounts.iter().for_each(|meta| {

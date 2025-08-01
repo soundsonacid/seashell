@@ -6,8 +6,8 @@ use agave_feature_set::FeatureSet;
 use solana_account::{Account, AccountSharedData, ReadableAccount, WritableAccount};
 use solana_compute_budget::compute_budget::ComputeBudget;
 use solana_hash::Hash;
-use solana_instruction::Instruction;
 use solana_instruction::error::InstructionError;
+use solana_instruction::Instruction;
 use solana_log_collector::LogCollector;
 use solana_precompile_error::PrecompileError;
 use solana_program_runtime::invoke_context::{EnvironmentConfig, InvokeContext};
@@ -17,8 +17,9 @@ use solana_timings::ExecuteTimings;
 use solana_transaction_context::TransactionContext;
 
 use crate::accounts_db::AccountsDb;
-use crate::compile::{INSTRUCTION_PROGRAM_ID_INDEX, compile_accounts_for_instruction};
+use crate::compile::{compile_accounts_for_instruction, INSTRUCTION_PROGRAM_ID_INDEX};
 use crate::error::SeashellError;
+use crate::scenario::Scenario;
 
 #[derive(Default)]
 pub struct Config {
@@ -154,6 +155,24 @@ impl Seashell {
         Ok(())
     }
 
+    /// Loads a scenario from a .json.gz file, or creates a new empty scenario if the file doesn't exist.
+    ///
+    /// The scenario file should be in the "scenarios" directory of the current crate.
+    /// Accounts from the scenario will override any existing accounts.
+    /// When the scenario is dropped, it will be written back to the file.
+    ///
+    /// If the RPC URL environment variable is set, missing accounts will be fetched from the RPC.
+    pub fn load_scenario(&mut self, scenario_name: &str) {
+        const ROOT: &str = env!("CARGO_MANIFEST_DIR");
+        let scenario_path = PathBuf::from(ROOT).join(format!("scenarios/{scenario_name}.json.gz"));
+
+        self.accounts_db.scenario = if let Ok(ref rpc_url) = std::env::var("RPC_URL") {
+            Scenario::from_file_with_rpc(scenario_path, rpc_url.clone())
+        } else {
+            Scenario::from_file(scenario_path)
+        };
+    }
+
     pub fn process_instruction(&mut self, ixn: Instruction) -> InstructionProcessingResult {
         let transaction_accounts = self.accounts_db.accounts_for_instruction(&ixn);
         let sysvar_cache = self
@@ -261,7 +280,7 @@ impl Seashell {
         self.set_account_from_account_shared_data(pubkey, account);
     }
 
-    pub fn account(&self, pubkey: &Pubkey) -> Account {
+    pub fn account(&mut self, pubkey: &Pubkey) -> Account {
         self.accounts_db.account(pubkey).into()
     }
 
@@ -581,11 +600,104 @@ mod tests {
 
         assert!(seashell.accounts_db.accounts.contains_key(&tokenkeg));
         assert!(seashell.accounts_db.accounts.contains_key(&token22));
-        assert!(
-            seashell
-                .accounts_db
-                .accounts
-                .contains_key(&associated_token)
-        );
+        assert!(seashell
+            .accounts_db
+            .accounts
+            .contains_key(&associated_token));
+    }
+
+    #[test]
+    fn test_scenario_loading() {
+        use std::fs;
+
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let scenarios_dir = temp_dir.path().join("scenarios");
+        fs::create_dir_all(&scenarios_dir).unwrap();
+
+        let original_manifest_dir = env!("CARGO_MANIFEST_DIR");
+        unsafe { std::env::set_var("CARGO_MANIFEST_DIR", temp_dir.path()) }
+
+        unsafe { std::env::set_var("RPC_URL", "https://api.mainnet-beta.solana.com") };
+
+        let mut seashell = Seashell::new_with_config(Config { memoize: false });
+
+        let pubkey1 = Pubkey::from_str_const("B91piBSfCBRs5rUxCMRdJEGv7tNEnFxweWcdQJHJoFpi");
+        let pubkey2 = Pubkey::from_str_const("6gAnjderE13TGGFeqdPVQ438jp2FPVeyXAszxKu9y338");
+
+        // Load scenario (should create new file)
+        seashell.load_scenario("test_scenario");
+
+        // Verify accounts are currently accessible
+        // Will panic if not set
+        seashell.account(&pubkey1);
+        seashell.account(&pubkey2);
+
+        // Drop seashell to trigger scenario save
+        drop(seashell);
+
+        // Create new seashell and load the saved scenario
+        let mut seashell2 = Seashell::new();
+        seashell2.load_scenario("test_scenario");
+
+        // Verify accounts were persisted and loaded
+        // Will panic if not set
+        seashell2.account(&pubkey1);
+        seashell2.account(&pubkey2);
+
+        unsafe { std::env::set_var("CARGO_MANIFEST_DIR", original_manifest_dir) }
+        unsafe { std::env::remove_var("RPC_URL") }
+    }
+
+    #[test]
+    fn test_account_lookup_order() {
+        let mut seashell = Seashell::new();
+
+        let pubkey = Pubkey::new_unique();
+
+        seashell.airdrop(pubkey, 1000);
+        assert_eq!(seashell.account(&pubkey).lamports(), 1000);
+
+        use std::fs;
+
+        use tempfile::TempDir;
+        let temp_dir = TempDir::new().unwrap();
+        let scenarios_dir = temp_dir.path().join("scenarios");
+        fs::create_dir_all(&scenarios_dir).unwrap();
+        unsafe { std::env::set_var("CARGO_MANIFEST_DIR", temp_dir.path()) }
+
+        seashell.load_scenario("test_override");
+
+        let override_account =
+            AccountSharedData::new(2000, 0, &solana_sdk_ids::system_program::id());
+        seashell
+            .accounts_db
+            .scenario
+            .insert(pubkey, override_account);
+
+        assert_eq!(seashell.account(&pubkey).lamports(), 2000);
+    }
+
+    #[test]
+    #[should_panic(expected = "Account not found in scenario or accounts. RPC URL must be \
+                               configured to fetch missing accounts.")]
+    fn test_missing_account_without_rpc() {
+        let mut seashell = Seashell::new();
+
+        use std::fs;
+
+        use tempfile::TempDir;
+        let temp_dir = TempDir::new().unwrap();
+        let scenarios_dir = temp_dir.path().join("scenarios");
+        fs::create_dir_all(&scenarios_dir).unwrap();
+        unsafe { std::env::set_var("CARGO_MANIFEST_DIR", temp_dir.path()) }
+
+        // Ensure RPC_URL is not set
+        unsafe { std::env::remove_var("RPC_URL") }
+        seashell.load_scenario("test_no_rpc");
+
+        let missing_pubkey = Pubkey::new_unique();
+        seashell.account(&missing_pubkey);
     }
 }

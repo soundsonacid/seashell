@@ -10,8 +10,12 @@ path = "tests/account-loader.rs"
 [dependencies]
 agave-feature-set = { workspace = true }
 agave-precompiles = { workspace = true }
+flate2 = { workspace = true }
 indexmap = { workspace = true }
+log = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
+serde_with = { workspace = true }
 solana-account = { workspace = true }
 solana-bpf-loader-program = { workspace = true }
 solana-builtins = { workspace = true }
@@ -27,6 +31,8 @@ solana-precompile-error.workspace = true
 solana-program-runtime.workspace = true
 solana-pubkey = { workspace = true }
 solana-rent = { workspace = true }
+solana-rpc-client = { workspace = true }
+solana-rpc-client-api = { workspace = true }
 solana-sdk-ids = { workspace = true }
 solana-slot-hashes = { workspace = true }
 solana-stake-interface = { workspace = true }
@@ -45,3 +51,4 @@ rand = { workspace = true }
 solana-ed25519-program = { workspace = true }
 solana-secp256k1-program = { workspace = true, features = ["bincode"] }
 solana-secp256r1-program = { workspace = true }
+tempfile = { workspace = true }
