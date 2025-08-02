@@ -1,5 +1,3 @@
-
-
 #[cfg(feature = "bpf-entrypoint")]
 mod entrypoint {
     use pinocchio::account_info::AccountInfo;

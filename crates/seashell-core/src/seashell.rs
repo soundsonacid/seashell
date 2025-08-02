@@ -175,6 +175,7 @@ impl Seashell {
 
     pub fn process_instruction(&mut self, ixn: Instruction) -> InstructionProcessingResult {
         let transaction_accounts = self.accounts_db.accounts_for_instruction(&ixn);
+
         let sysvar_cache = self
             .accounts_db
             .sysvars_for_instruction(&transaction_accounts);
@@ -215,6 +216,20 @@ impl Seashell {
                 std::iter::once(ixn.data.as_slice()),
             )
         } else {
+            // invoke_context.transaction_context
+            //     .get_next_instruction_context()
+            //     .unwrap()
+            //     .configure(&[INSTRUCTION_PROGRAM_ID_INDEX], &instruction_accounts, &ixn.data);
+            // invoke_context.push().unwrap();
+            // let instruction_context = invoke_context.transaction_context.get_current_instruction_context().unwrap();
+            // let num_accounts = instruction_context.get_number_of_instruction_accounts();
+            // dbg!(&num_accounts);
+            // for i in 0..num_accounts {
+            //     let dup = instruction_context.is_instruction_account_duplicate(i).unwrap();
+            //     dbg!(&dup);
+            // }
+
+            // todo!()
             invoke_context.process_instruction(
                 &ixn.data,
                 &instruction_accounts,
@@ -260,7 +275,7 @@ impl Seashell {
                 }
             }
             Err(e) => {
-                println!("Error processing ixn: {:?}", &e);
+                eprintln!("Error processing ixn: {:?}", &e);
                 InstructionProcessingResult {
                     compute_units_consumed,
                     return_data,

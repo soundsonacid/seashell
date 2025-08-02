@@ -157,13 +157,3 @@ impl AccountsDb {
             .replenish(program_id, Arc::new(program_cache_entry));
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_multiple_unique() {
-        
-    }
-}
