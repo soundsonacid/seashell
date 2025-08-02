@@ -216,20 +216,6 @@ impl Seashell {
                 std::iter::once(ixn.data.as_slice()),
             )
         } else {
-            // invoke_context.transaction_context
-            //     .get_next_instruction_context()
-            //     .unwrap()
-            //     .configure(&[INSTRUCTION_PROGRAM_ID_INDEX], &instruction_accounts, &ixn.data);
-            // invoke_context.push().unwrap();
-            // let instruction_context = invoke_context.transaction_context.get_current_instruction_context().unwrap();
-            // let num_accounts = instruction_context.get_number_of_instruction_accounts();
-            // dbg!(&num_accounts);
-            // for i in 0..num_accounts {
-            //     let dup = instruction_context.is_instruction_account_duplicate(i).unwrap();
-            //     dbg!(&dup);
-            // }
-
-            // todo!()
             invoke_context.process_instruction(
                 &ixn.data,
                 &instruction_accounts,
