@@ -6,9 +6,7 @@ use solana_transaction_context::{IndexOfAccount, InstructionAccount};
 pub const INSTRUCTION_PROGRAM_ID_INDEX: u16 = 0;
 
 pub fn compile_accounts_for_instruction(ixn: &Instruction) -> Vec<InstructionAccount> {
-    // IndexMap preserves insertion order so program_id index will always be 0
     let mut account_map: IndexMap<Pubkey, (bool, bool)> = IndexMap::new();
-
     account_map.insert(ixn.program_id, (false, false));
 
     for account in &ixn.accounts {
@@ -21,40 +19,37 @@ pub fn compile_accounts_for_instruction(ixn: &Instruction) -> Vec<InstructionAcc
             .or_insert((account.is_signer, account.is_writable));
     }
 
-    let is_signer = |map: &IndexMap<Pubkey, (bool, bool)>, idx: usize| -> bool {
-        *map.get_index(idx)
-            .map(|(_, (is_signer, _))| is_signer)
-            .unwrap()
-    };
+    let mut transaction_accounts = vec![ixn.program_id];
+    for account_meta in &ixn.accounts {
+        transaction_accounts.push(account_meta.pubkey);
+    }
 
-    let is_writable = |map: &IndexMap<Pubkey, (bool, bool)>, idx: usize| -> bool {
-        *map.get_index(idx)
-            .map(|(_, (_, is_writable))| is_writable)
-            .unwrap()
-    };
+    let mut pubkey_to_first_tx_index: IndexMap<Pubkey, u8> = IndexMap::new();
+    for (idx, pubkey) in transaction_accounts.iter().enumerate() {
+        pubkey_to_first_tx_index.entry(*pubkey).or_insert(idx as u8);
+    }
 
-    let account_indices = ixn
-        .accounts
-        .iter()
-        .map(|account_meta| account_map.get_index_of(&account_meta.pubkey).unwrap() as u8)
-        .collect::<Vec<_>>();
-
-    account_indices
+    ixn.accounts
         .iter()
         .enumerate()
-        .map(|(idx, global_idx)| {
-            let index_in_callee = account_indices
+        .map(|(idx, account_meta)| {
+            let first_tx_idx = *pubkey_to_first_tx_index.get(&account_meta.pubkey).unwrap();
+
+            let index_in_callee = ixn
+                .accounts
                 .iter()
                 .take(idx)
-                .position(|&acc_idx| acc_idx == *global_idx)
+                .position(|meta| meta.pubkey == account_meta.pubkey)
                 .unwrap_or(idx) as IndexOfAccount;
 
+            let (is_signer, is_writable) = account_map.get(&account_meta.pubkey).unwrap();
+
             InstructionAccount {
-                index_in_transaction: *global_idx as IndexOfAccount,
-                index_in_caller: *global_idx as IndexOfAccount,
+                index_in_transaction: first_tx_idx as IndexOfAccount,
+                index_in_caller: first_tx_idx as IndexOfAccount,
                 index_in_callee,
-                is_signer: is_signer(&account_map, *global_idx as usize),
-                is_writable: is_writable(&account_map, *global_idx as usize),
+                is_signer: *is_signer,
+                is_writable: *is_writable,
             }
         })
         .collect()

@@ -3,6 +3,10 @@ name = "seashell"
 version = "0.1.0"
 edition = "2021"
 
+[[test]]
+name = "account-loader"
+path = "tests/account-loader.rs"
+
 [dependencies]
 agave-feature-set = { workspace = true }
 agave-precompiles = { workspace = true }
