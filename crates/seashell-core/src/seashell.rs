@@ -175,6 +175,7 @@ impl Seashell {
 
     pub fn process_instruction(&mut self, ixn: Instruction) -> InstructionProcessingResult {
         let transaction_accounts = self.accounts_db.accounts_for_instruction(&ixn);
+
         let sysvar_cache = self
             .accounts_db
             .sysvars_for_instruction(&transaction_accounts);
@@ -260,7 +261,7 @@ impl Seashell {
                 }
             }
             Err(e) => {
-                println!("Error processing ixn: {:?}", &e);
+                eprintln!("Error processing ixn: {:?}", &e);
                 InstructionProcessingResult {
                     compute_units_consumed,
                     return_data,
@@ -310,7 +311,7 @@ pub enum InstructionProcessingError {
     ProgramError,
 }
 
-fn try_find_workspace_root() -> Option<PathBuf> {
+pub fn try_find_workspace_root() -> Option<PathBuf> {
     let cargo = std::env::var("CARGO").unwrap_or("cargo".to_owned());
     let output = std::process::Command::new(cargo)
         .arg("locate-project")

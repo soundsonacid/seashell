@@ -1,3 +1,4 @@
 /target
 .claude
 /crates/seashell-core/scenarios
+/programs/account-loader/target
