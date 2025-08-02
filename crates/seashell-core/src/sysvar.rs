@@ -8,7 +8,7 @@ use solana_rent::Rent;
 use solana_slot_hashes::{SlotHashes, MAX_ENTRIES};
 use solana_stake_interface::stake_history::{StakeHistory, StakeHistoryEntry};
 use solana_sysvar::last_restart_slot::LastRestartSlot;
-use solana_sysvar_id::SysvarId;
+use solana_sysvar_id::{SysvarId, ID as SYSVAR};
 
 pub struct Sysvars {
     pub clock: Clock,
@@ -90,17 +90,44 @@ impl Sysvars {
 
     pub fn get(&self, sysvar: &Pubkey) -> AccountSharedData {
         match sysvar {
-            _ if sysvar == &Clock::id() => AccountSharedData::new(0, 0, &Clock::id()),
-            _ if sysvar == &EpochSchedule::id() => {
-                AccountSharedData::new(0, 0, &EpochSchedule::id())
+            _ if sysvar == &Clock::id() => {
+                AccountSharedData::new_data(0, &bincode::serialize(&self.clock).unwrap(), &SYSVAR)
+                    .unwrap()
             }
-            _ if sysvar == &EpochRewards::id() => AccountSharedData::new(0, 0, &EpochRewards::id()),
-            _ if sysvar == &Rent::id() => AccountSharedData::new(0, 0, &Rent::id()),
-            _ if sysvar == &SlotHashes::id() => AccountSharedData::new(0, 0, &SlotHashes::id()),
-            _ if sysvar == &StakeHistory::id() => AccountSharedData::new(0, 0, &StakeHistory::id()),
-            _ if sysvar == &LastRestartSlot::id() => {
-                AccountSharedData::new(0, 0, &LastRestartSlot::id())
+            _ if sysvar == &EpochSchedule::id() => AccountSharedData::new_data(
+                0,
+                &bincode::serialize(&self.epoch_schedule).unwrap(),
+                &SYSVAR,
+            )
+            .unwrap(),
+            _ if sysvar == &EpochRewards::id() => AccountSharedData::new_data(
+                0,
+                &bincode::serialize(&self.epoch_rewards).unwrap(),
+                &SYSVAR,
+            )
+            .unwrap(),
+            _ if sysvar == &Rent::id() => {
+                AccountSharedData::new_data(0, &bincode::serialize(&self.rent).unwrap(), &SYSVAR)
+                    .unwrap()
             }
+            _ if sysvar == &SlotHashes::id() => AccountSharedData::new_data(
+                0,
+                &bincode::serialize(&self.slot_hashes).unwrap(),
+                &SYSVAR,
+            )
+            .unwrap(),
+            _ if sysvar == &StakeHistory::id() => AccountSharedData::new_data(
+                0,
+                &bincode::serialize(&self.stake_history).unwrap(),
+                &SYSVAR,
+            )
+            .unwrap(),
+            _ if sysvar == &LastRestartSlot::id() => AccountSharedData::new_data(
+                0,
+                &bincode::serialize(&self.last_restart_slot).unwrap(),
+                &SYSVAR,
+            )
+            .unwrap(),
             _ => panic!("Unknown sysvar: {sysvar}"),
         }
     }
