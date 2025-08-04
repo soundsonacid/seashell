@@ -71,9 +71,6 @@ impl InvokeContextCallback for SeashellInvokeContextCallback<'_> {
 }
 
 impl Seashell {
-    // TODO:
-    // set_account, load_program, etc. API
-    // new_from_snapshot, etc. API
     pub fn new() -> Self {
         #[rustfmt::skip]
         solana_logger::setup_with_default(
@@ -96,6 +93,16 @@ impl Seashell {
         let mut seashell = Seashell::new();
         seashell.config = config;
         seashell
+    }
+
+    pub fn enable_log_collector(&mut self) {
+        self.log_collector = Some(Rc::new(RefCell::new(LogCollector::default())))
+    }
+
+    pub fn logs(&self) -> Option<Vec<String>> {
+        self.log_collector
+            .as_ref()
+            .map(|log_collector| log_collector.borrow().get_recorded_content().to_owned())
     }
 
     pub fn load_spl(&mut self) {
@@ -163,8 +170,8 @@ impl Seashell {
     ///
     /// If the RPC URL environment variable is set, missing accounts will be fetched from the RPC.
     pub fn load_scenario(&mut self, scenario_name: &str) {
-        const ROOT: &str = env!("CARGO_MANIFEST_DIR");
-        let scenario_path = PathBuf::from(ROOT).join(format!("scenarios/{scenario_name}.json.gz"));
+        let workspace_root = try_find_workspace_root().expect("Failed to locate workspace root");
+        let scenario_path = workspace_root.join(format!("scenarios/{scenario_name}.json.gz"));
 
         self.accounts_db.scenario = if let Ok(ref rpc_url) = std::env::var("RPC_URL") {
             Scenario::from_file_with_rpc(scenario_path, rpc_url.clone())
@@ -617,17 +624,13 @@ mod tests {
         let scenarios_dir = temp_dir.path().join("scenarios");
         fs::create_dir_all(&scenarios_dir).unwrap();
 
-        let original_manifest_dir = env!("CARGO_MANIFEST_DIR");
-        unsafe { std::env::set_var("CARGO_MANIFEST_DIR", temp_dir.path()) }
-
-        unsafe { std::env::set_var("RPC_URL", "https://api.mainnet-beta.solana.com") };
-
         let mut seashell = Seashell::new_with_config(Config { memoize: false });
 
         let pubkey1 = Pubkey::from_str_const("B91piBSfCBRs5rUxCMRdJEGv7tNEnFxweWcdQJHJoFpi");
         let pubkey2 = Pubkey::from_str_const("6gAnjderE13TGGFeqdPVQ438jp2FPVeyXAszxKu9y338");
 
         // Load scenario (should create new file)
+        unsafe { std::env::set_var("RPC_URL", "https://api.mainnet-beta.solana.com") };
         seashell.load_scenario("test_scenario");
 
         // Verify accounts are currently accessible
@@ -647,7 +650,6 @@ mod tests {
         seashell2.account(&pubkey1);
         seashell2.account(&pubkey2);
 
-        unsafe { std::env::set_var("CARGO_MANIFEST_DIR", original_manifest_dir) }
         unsafe { std::env::remove_var("RPC_URL") }
     }
 
