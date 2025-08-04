@@ -1,11 +1,12 @@
 [workspace]
 members = ["crates/seashell-core"]
-exclude = ["programs/account-loader"]
+exclude = ["programs/account-loader", "programs/bench"]
 resolver = "2"
 
 [workspace.dependencies]
 agave-feature-set = "2.3"
 agave-precompiles = "2.3"
+bincode = "1.3.3"
 ed25519-dalek = "=1.0.1"
 flate2 = "1.0.32"
 indexmap = "2.9.0"
