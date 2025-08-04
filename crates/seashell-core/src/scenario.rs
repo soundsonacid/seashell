@@ -113,9 +113,7 @@ impl Scenario {
              missing accounts.",
         );
 
-        let account = rpc_client
-            .get_account(pubkey)
-            .unwrap_or_else(|err| panic!("Failed to fetch account {pubkey} from RPC: {err}"));
+        let account = rpc_client.get_account(pubkey).unwrap_or_default();
 
         let account_shared: AccountSharedData = account.into();
         self.dirty = true;
