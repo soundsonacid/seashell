@@ -8,8 +8,8 @@ name = "account-loader"
 path = "tests/account-loader.rs"
 
 [[test]]
-name = "compiler-bench"
-path = "tests/bench.rs"
+name = "sysvar-override"
+path = "tests/sysvar.rs"
 
 [dependencies]
 agave-feature-set = { workspace = true }
