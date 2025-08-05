@@ -1,6 +1,3 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use seashell::{try_find_workspace_root, Seashell};
 use solana_account::Account;
 use solana_instruction::{AccountMeta, Instruction};
@@ -18,8 +15,7 @@ fn test_account_loader() {
         .load_program_from_environment("account_loader", program_id)
         .unwrap();
 
-    let log_collector = Rc::new(RefCell::new(solana_log_collector::LogCollector::default()));
-    seashell.log_collector = Some(Rc::clone(&log_collector));
+    seashell.enable_log_collector();
 
     let mut pubkey_order = Vec::new();
     let account_metas: [AccountMeta; 50] = std::array::from_fn(|_| {
@@ -45,7 +41,7 @@ fn test_account_loader() {
 
     seashell.process_instruction(instruction);
 
-    let logs = log_collector.borrow().get_recorded_content().to_owned();
+    let logs = seashell.logs().expect("log collector was set");
 
     let pubkeys: Vec<&str> = logs
         .iter()
@@ -70,8 +66,7 @@ fn test_account_loader_duplicate_accounts() {
         .load_program_from_environment("account_loader", program_id)
         .unwrap();
 
-    let log_collector = Rc::new(RefCell::new(solana_log_collector::LogCollector::default()));
-    seashell.log_collector = Some(Rc::clone(&log_collector));
+    seashell.enable_log_collector();
 
     let mut pubkey_order = Vec::new();
     let duplicate = Pubkey::new_unique();
@@ -102,7 +97,7 @@ fn test_account_loader_duplicate_accounts() {
 
     seashell.process_instruction(instruction);
 
-    let logs = log_collector.borrow().get_recorded_content().to_owned();
+    let logs = seashell.logs().expect("log collector was set");
 
     let pubkeys: Vec<&str> = logs
         .iter()

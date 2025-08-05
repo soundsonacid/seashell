@@ -2555,6 +2555,7 @@ version = "0.1.0"
 dependencies = [
  "agave-feature-set",
  "agave-precompiles",
+ "bincode",
  "ed25519-dalek",
  "flate2",
  "indexmap 2.9.0",

@@ -77,6 +77,7 @@ impl AccountsDb {
                 // Optionality here is to avoid supporting Fees sysvar, which is deprecated but expected by SysvarCache
                 let account = self.account_maybe(sysvar);
                 let data = account.map(|a| a.data().to_owned()).unwrap_or_default();
+
                 set_sysvar(&data);
             }
         });
@@ -91,7 +92,11 @@ impl AccountsDb {
     }
 
     pub fn set_account(&mut self, pubkey: Pubkey, account: AccountSharedData) {
-        self.accounts.insert(pubkey, account);
+        if self.sysvars.is_sysvar(&pubkey) {
+            self.sysvars.set(&pubkey, account)
+        } else {
+            self.accounts.insert(pubkey, account);
+        }
     }
 
     pub fn set_account_mock(&mut self, pubkey: Pubkey) {
