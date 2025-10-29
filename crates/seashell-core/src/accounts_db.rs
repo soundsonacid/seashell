@@ -54,13 +54,22 @@ impl AccountsDb {
 
     pub fn accounts_for_instruction(
         &mut self,
+        allow_uninitialized_accounts: bool,
         instruction: &Instruction,
     ) -> Vec<TransactionAccount> {
         // always insert the program_id of the instruction as the first account.
         let mut accounts = vec![(instruction.program_id, self.account(&instruction.program_id))];
         instruction.accounts.iter().for_each(|meta| {
             let pubkey = meta.pubkey;
-            accounts.push((pubkey, self.account(&pubkey)))
+            if allow_uninitialized_accounts {
+                let account = self.account_maybe(&pubkey).unwrap_or_else(|| {
+                    log::debug!("Creating uninitialized account for {pubkey}");
+                    AccountSharedData::default()
+                });
+                accounts.push((pubkey, account))
+            } else {
+                accounts.push((pubkey, self.account(&pubkey)))
+            }
         });
         accounts
     }
