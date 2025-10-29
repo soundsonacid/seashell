@@ -1,6 +1,6 @@
 [workspace]
 members = ["crates/seashell-core"]
-exclude = ["programs/account-loader", "programs/sysvar"]
+exclude = ["programs/account-loader", "programs/sysvar", "programs/create-account"]
 resolver = "2"
 
 [workspace.dependencies]

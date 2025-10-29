@@ -24,6 +24,7 @@ use crate::scenario::Scenario;
 #[derive(Default)]
 pub struct Config {
     pub memoize: bool,
+    pub allow_uninitialized_accounts: bool,
 }
 
 pub struct Seashell {
@@ -181,7 +182,9 @@ impl Seashell {
     }
 
     pub fn process_instruction(&mut self, ixn: Instruction) -> InstructionProcessingResult {
-        let transaction_accounts = self.accounts_db.accounts_for_instruction(&ixn);
+        let transaction_accounts = self
+            .accounts_db
+            .accounts_for_instruction(self.config.allow_uninitialized_accounts, &ixn);
 
         let sysvar_cache = self
             .accounts_db
@@ -513,7 +516,10 @@ mod tests {
     #[test]
     fn test_memoize() {
         crate::set_log();
-        let mut seashell = Seashell::new_with_config(Config { memoize: true });
+        let mut seashell = Seashell::new_with_config(Config {
+            memoize: true,
+            allow_uninitialized_accounts: false,
+        });
 
         let from = solana_pubkey::Pubkey::new_unique();
         let to = solana_pubkey::Pubkey::new_unique();
@@ -624,7 +630,10 @@ mod tests {
         let scenarios_dir = temp_dir.path().join("scenarios");
         fs::create_dir_all(&scenarios_dir).unwrap();
 
-        let mut seashell = Seashell::new_with_config(Config { memoize: false });
+        let mut seashell = Seashell::new_with_config(Config {
+            memoize: false,
+            allow_uninitialized_accounts: false,
+        });
 
         let pubkey1 = Pubkey::from_str_const("B91piBSfCBRs5rUxCMRdJEGv7tNEnFxweWcdQJHJoFpi");
         let pubkey2 = Pubkey::from_str_const("6gAnjderE13TGGFeqdPVQ438jp2FPVeyXAszxKu9y338");

@@ -11,6 +11,10 @@ path = "tests/account-loader.rs"
 name = "sysvar-override"
 path = "tests/sysvar.rs"
 
+[[test]]
+name = "create-account"
+path = "tests/create-account.rs"
+
 [dependencies]
 agave-feature-set = { workspace = true }
 agave-precompiles = { workspace = true }
