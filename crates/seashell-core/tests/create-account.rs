@@ -34,11 +34,6 @@ fn test_create_account() {
 
     let new_account = Pubkey::find_program_address(&[b"test", signer.as_ref()], &program_id).0;
 
-    // seashell.set_account(
-    //     new_account,
-    //     Account::default()
-    // );
-
     let accounts = vec![
         AccountMeta::new(signer, true),
         AccountMeta::new(new_account, false),
