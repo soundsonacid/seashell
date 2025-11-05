@@ -42,6 +42,9 @@ pub struct Seashell {
     pub log_collector: Option<Rc<RefCell<LogCollector>>>,
 }
 
+unsafe impl Send for Seashell {}
+unsafe impl Sync for Seashell {}
+
 impl Default for Seashell {
     fn default() -> Self {
         Seashell {
