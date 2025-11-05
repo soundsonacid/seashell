@@ -1,10 +1,12 @@
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::io::BufReader;
-use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
+use parking_lot::RwLock;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -17,8 +19,8 @@ use solana_rpc_client::rpc_client::RpcClient;
 /// When an RPC client is provided, missing accounts are fetched and persisted.
 #[derive(Default)]
 pub struct Scenario {
-    dirty: bool,
-    data: HashMap<Pubkey, AccountSharedData>,
+    dirty: Cell<bool>,
+    data: Arc<RwLock<HashMap<Pubkey, AccountSharedData>>>,
     path: Option<PathBuf>,
     rpc_client: Option<RpcClient>,
 }
@@ -77,10 +79,6 @@ serde_with::serde_conv!(
 );
 
 impl Scenario {
-    pub fn new(data: HashMap<Pubkey, AccountSharedData>, path: Option<PathBuf>) -> Self {
-        Scenario { dirty: false, data, path, rpc_client: None }
-    }
-
     /// Load a scenario from a file, or create an empty one if the file doesn't exist.
     pub fn from_file(path: PathBuf) -> Self {
         let data = if path.exists() {
@@ -94,7 +92,12 @@ impl Scenario {
             HashMap::new()
         };
 
-        Scenario { dirty: false, data, path: Some(path), rpc_client: None }
+        Scenario {
+            dirty: Cell::new(false),
+            data: Arc::new(RwLock::new(data)),
+            path: Some(path),
+            rpc_client: None,
+        }
     }
 
     /// Load a scenario with RPC fallback enabled.
@@ -106,7 +109,7 @@ impl Scenario {
 
     /// Fetch an account from RPC and store it in the scenario.
     /// Panics if RPC is not configured or if the RPC request fails.
-    pub fn fetch_from_rpc(&mut self, pubkey: &Pubkey) -> AccountSharedData {
+    pub fn fetch_from_rpc(&self, pubkey: &Pubkey) -> AccountSharedData {
         log::debug!("Attempting to fetch account: {pubkey}");
         let rpc_client = self.rpc_client.as_ref().expect(
             "Account not found in scenario or accounts. RPC URL must be configured to fetch \
@@ -117,34 +120,29 @@ impl Scenario {
         let account = rpc_client.get_account(pubkey).expect(&failure_msg);
 
         let account_shared: AccountSharedData = account.into();
-        self.dirty = true;
-        self.data.insert(*pubkey, account_shared.clone());
+        self.dirty.set(true);
+        self.data.write().insert(*pubkey, account_shared.clone());
         account_shared
     }
-}
 
-impl Deref for Scenario {
-    type Target = HashMap<Pubkey, AccountSharedData>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.data
+    pub fn get(&self, pubkey: &Pubkey) -> Option<AccountSharedData> {
+        self.data.read().get(pubkey).cloned()
     }
-}
 
-impl DerefMut for Scenario {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.dirty = true;
-        &mut self.data
+    pub fn insert(&mut self, pubkey: Pubkey, account: AccountSharedData) {
+        self.dirty.set(true);
+        self.data.write().insert(pubkey, account);
     }
 }
 
 impl Drop for Scenario {
     fn drop(&mut self) {
-        if self.dirty {
+        if self.dirty.get() {
             if let Some(path) = &self.path {
                 // Convert AccountSharedData back to Account for serialization
                 let accounts: HashMap<Pubkey, Account> = self
                     .data
+                    .read()
                     .iter()
                     .map(|(pubkey, account_shared)| (*pubkey, account_shared.clone().into()))
                     .collect();

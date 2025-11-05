@@ -312,7 +312,7 @@ impl Seashell {
         self.set_account_from_account_shared_data(pubkey, account);
     }
 
-    pub fn account(&mut self, pubkey: &Pubkey) -> Account {
+    pub fn account(&self, pubkey: &Pubkey) -> Account {
         self.accounts_db.account(pubkey).into()
     }
 

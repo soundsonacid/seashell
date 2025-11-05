@@ -47,7 +47,7 @@ impl AccountsDb {
         None
     }
 
-    pub fn account(&mut self, pubkey: &Pubkey) -> AccountSharedData {
+    pub fn account(&self, pubkey: &Pubkey) -> AccountSharedData {
         self.account_maybe(pubkey)
             .unwrap_or_else(|| self.scenario.fetch_from_rpc(pubkey))
     }
