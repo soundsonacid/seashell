@@ -1,5 +1,4 @@
 #![allow(clippy::expect_fun_call)]
-#![feature(path_file_prefix)]
 pub mod accounts_db;
 pub mod compile;
 pub mod error;

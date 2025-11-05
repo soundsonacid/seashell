@@ -21,10 +21,17 @@ use crate::compile::{compile_accounts_for_instruction, INSTRUCTION_PROGRAM_ID_IN
 use crate::error::SeashellError;
 use crate::scenario::Scenario;
 
-#[derive(Default)]
 pub struct Config {
     pub memoize: bool,
     pub allow_uninitialized_accounts: bool,
+}
+
+// Allow deriving Default manually to be explicit about configuration defaults
+#[allow(clippy::derivable_impls)]
+impl Default for Config {
+    fn default() -> Self {
+        Config { memoize: false, allow_uninitialized_accounts: false }
+    }
 }
 
 pub struct Seashell {
@@ -146,8 +153,11 @@ impl Seashell {
             let entry = entry_maybe?;
             let path = entry.path();
 
-            if path.extension().is_some_and(|ext| *ext == *"so")
-                && path.file_prefix().is_some_and(|pre| *pre == *program_name)
+            if path.extension().is_some_and(|ext| ext == "so")
+                && path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .is_some_and(|stem| stem == program_name)
             {
                 let program_bytes = std::fs::read(path)?;
                 self.accounts_db.load_program_from_bytes_with_loader(
@@ -758,7 +768,7 @@ mod tests {
         unsafe { std::env::remove_var("RPC_URL") }
         seashell.load_scenario("test_no_rpc");
 
-        let missing_pubkey = Pubkey::new_unique();
+        let missing_pubkey = Pubkey::from_str_const("NoShot1111111111111111111111111111111111111");
         seashell.account(&missing_pubkey);
     }
 }
