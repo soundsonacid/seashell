@@ -18,6 +18,7 @@ path = "tests/create-account.rs"
 [dependencies]
 agave-feature-set = { workspace = true }
 agave-precompiles = { workspace = true }
+agave-syscalls = { workspace = true }
 bincode = { workspace = true }
 flate2 = { workspace = true }
 indexmap = { workspace = true }
@@ -34,7 +35,6 @@ solana-epoch-rewards = { workspace = true }
 solana-epoch-schedule = { workspace = true }
 solana-hash = { workspace = true }
 solana-instruction = { workspace = true }
-solana-log-collector = { workspace = true }
 solana-logger = { workspace = true }
 solana-precompile-error.workspace = true
 solana-program-runtime.workspace = true
@@ -46,9 +46,10 @@ solana-sdk-ids = { workspace = true }
 solana-slot-hashes = { workspace = true }
 solana-stake-interface = { workspace = true }
 solana-svm-callback = { workspace = true }
+solana-svm-log-collector = { workspace = true }
+solana-svm-timings = { workspace = true }
 solana-sysvar = { workspace = true }
 solana-sysvar-id = { workspace = true }
-solana-timings = { workspace = true }
 solana-transaction-context = { workspace = true }
 thiserror = { workspace = true }
 
