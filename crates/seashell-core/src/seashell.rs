@@ -8,13 +8,13 @@ use solana_compute_budget::compute_budget::ComputeBudget;
 use solana_hash::Hash;
 use solana_instruction::error::InstructionError;
 use solana_instruction::Instruction;
-use solana_log_collector::LogCollector;
 use solana_precompile_error::PrecompileError;
 use solana_program_runtime::invoke_context::{EnvironmentConfig, InvokeContext};
 use solana_pubkey::Pubkey;
 use solana_svm_callback::InvokeContextCallback;
-use solana_timings::ExecuteTimings;
-use solana_transaction_context::TransactionContext;
+use solana_svm_log_collector::LogCollector;
+use solana_svm_timings::ExecuteTimings;
+use solana_transaction_context::{IndexOfAccount, TransactionContext};
 
 use crate::accounts_db::AccountsDb;
 use crate::compile::{compile_accounts_for_instruction, INSTRUCTION_PROGRAM_ID_INDEX};
@@ -40,7 +40,7 @@ impl Default for Seashell {
         Seashell {
             config: Config::default(),
             accounts_db: AccountsDb::default(),
-            compute_budget: ComputeBudget::default(),
+            compute_budget: ComputeBudget::new_with_defaults(false),
             feature_set: FeatureSet::all_enabled(),
             log_collector: None,
         }
@@ -198,6 +198,25 @@ impl Seashell {
 
         let instruction_accounts = compile_accounts_for_instruction(&ixn);
 
+        let mut dedup_map = vec![u8::MAX; solana_transaction_context::MAX_ACCOUNTS_PER_TRANSACTION];
+        for (idx, account) in instruction_accounts.iter().enumerate() {
+            let index_in_instruction = dedup_map
+                .get_mut(account.index_in_transaction as usize)
+                .unwrap();
+            if *index_in_instruction == u8::MAX {
+                *index_in_instruction = idx as u8;
+            }
+        }
+
+        transaction_context
+            .configure_next_instruction(
+                INSTRUCTION_PROGRAM_ID_INDEX as IndexOfAccount,
+                instruction_accounts,
+                dedup_map,
+                &ixn.data,
+            )
+            .expect("Failed to configure instruction");
+
         let epoch_stake_callback = SeashellInvokeContextCallback { feature_set: &self.feature_set };
         let runtime_features = self.feature_set.runtime_features();
         let mut invoke_context = InvokeContext::new(
@@ -221,18 +240,11 @@ impl Seashell {
             invoke_context.process_precompile(
                 &ixn.program_id,
                 &ixn.data,
-                &instruction_accounts,
-                &[INSTRUCTION_PROGRAM_ID_INDEX],
                 std::iter::once(ixn.data.as_slice()),
             )
         } else {
-            invoke_context.process_instruction(
-                &ixn.data,
-                &instruction_accounts,
-                &[INSTRUCTION_PROGRAM_ID_INDEX],
-                &mut compute_units_consumed,
-                &mut ExecuteTimings::default(),
-            )
+            invoke_context
+                .process_instruction(&mut compute_units_consumed, &mut ExecuteTimings::default())
         };
 
         let return_data = transaction_context.get_return_data().1.to_owned();
@@ -244,12 +256,11 @@ impl Seashell {
                         transaction_context
                             .find_index_of_account(pubkey)
                             .map(|idx| {
-                                let account = transaction_context
-                                    .get_account_at_index(idx)
-                                    .expect("Account should exist")
-                                    .borrow()
-                                    .to_owned();
-
+                                let accounts = transaction_context.accounts();
+                                let account = accounts
+                                    .try_borrow(idx)
+                                    .expect("Failed to borrow TransactionAccounts")
+                                    .clone();
                                 if self.config.memoize {
                                     self.set_account_from_account_shared_data(
                                         *pubkey,
@@ -558,31 +569,69 @@ mod tests {
     #[test]
     #[allow(deprecated)]
     fn test_precompiles() {
+        const MESSAGE_LENGTH: usize = 128;
         crate::set_log();
         let mut seashell = Seashell::new();
 
+        use rand::{thread_rng, Rng};
+        let mut rng = thread_rng();
+
         // ed25519 precompile
-        let secret_key = ed25519_dalek::Keypair::generate(&mut rand::thread_rng());
-        let ixn = solana_ed25519_program::new_ed25519_instruction(&secret_key, b"test");
+        use ed25519_dalek::Signer;
+        let privkey = ed25519_dalek::Keypair::generate(&mut rng);
+        let message: Vec<u8> = (0..MESSAGE_LENGTH).map(|_| rng.gen_range(0, 255)).collect();
+        let signature = privkey.sign(&message).to_bytes();
+        let pubkey = privkey.public.to_bytes();
+        let ixn = solana_ed25519_program::new_ed25519_instruction_with_signature(
+            &message, &signature, &pubkey,
+        );
 
         let result = seashell.process_instruction(ixn);
         assert!(result.error.is_none(), "Expected no error, got: {:?}", result.error);
         assert_eq!(result.compute_units_consumed, 0);
 
         // secp256k1 precompile
-        let secret_key = libsecp256k1::SecretKey::random(&mut rand::thread_rng());
-        let ixn = solana_secp256k1_program::new_secp256k1_instruction(&secret_key, b"test");
+        let secp_privkey = libsecp256k1::SecretKey::random(&mut thread_rng());
+        let message: Vec<u8> = (0..MESSAGE_LENGTH).map(|_| rng.gen_range(0, 255)).collect();
+        let secp_pubkey = libsecp256k1::PublicKey::from_secret_key(&secp_privkey);
+        let eth_address = solana_secp256k1_program::eth_address_from_pubkey(
+            &secp_pubkey.serialize()[1..].try_into().unwrap(),
+        );
+        let (signature, recovery_id) =
+            solana_secp256k1_program::sign_message(&secp_privkey.serialize(), &message).unwrap();
+        let ixn = solana_secp256k1_program::new_secp256k1_instruction_with_signature(
+            &message,
+            &signature,
+            recovery_id,
+            &eth_address,
+        );
 
         let result = seashell.process_instruction(ixn);
         assert!(result.error.is_none(), "Expected no error, got: {:?}", result.error);
         assert_eq!(result.compute_units_consumed, 0);
 
         // secp256r1 precompile
-        let curve_name = openssl::nid::Nid::X9_62_PRIME256V1;
-        let group = openssl::ec::EcGroup::from_curve_name(curve_name).unwrap();
-        let secret_key = openssl::ec::EcKey::generate(&group).unwrap();
-        let ixn = solana_secp256r1_program::new_secp256r1_instruction(b"test", secret_key).unwrap();
-
+        use openssl::bn::BigNumContext;
+        use openssl::ec::{EcGroup, EcKey};
+        use openssl::nid::Nid;
+        let group = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1).unwrap();
+        let secp_privkey = EcKey::generate(&group).unwrap();
+        let message: Vec<u8> = (0..MESSAGE_LENGTH).map(|_| rng.gen_range(0, 255)).collect();
+        let signature = solana_secp256r1_program::sign_message(
+            &message,
+            &secp_privkey.private_key_to_der().unwrap(),
+        )
+        .unwrap();
+        let mut ctx = BigNumContext::new().unwrap();
+        let pubkey = secp_privkey
+            .public_key()
+            .to_bytes(&group, openssl::ec::PointConversionForm::COMPRESSED, &mut ctx)
+            .unwrap();
+        let ixn = solana_secp256r1_program::new_secp256r1_instruction_with_signature(
+            &message,
+            &signature,
+            &pubkey.try_into().unwrap(),
+        );
         let result = seashell.process_instruction(ixn);
         assert!(result.error.is_none(), "Expected no error, got: {:?}", result.error);
         assert_eq!(result.compute_units_consumed, 0);

@@ -31,26 +31,12 @@ pub fn compile_accounts_for_instruction(ixn: &Instruction) -> Vec<InstructionAcc
 
     ixn.accounts
         .iter()
-        .enumerate()
-        .map(|(idx, account_meta)| {
+        .map(|account_meta| {
             let first_tx_idx = *pubkey_to_first_tx_index.get(&account_meta.pubkey).unwrap();
-
-            let index_in_callee = ixn
-                .accounts
-                .iter()
-                .take(idx)
-                .position(|meta| meta.pubkey == account_meta.pubkey)
-                .unwrap_or(idx) as IndexOfAccount;
 
             let (is_signer, is_writable) = account_map.get(&account_meta.pubkey).unwrap();
 
-            InstructionAccount {
-                index_in_transaction: first_tx_idx as IndexOfAccount,
-                index_in_caller: first_tx_idx as IndexOfAccount,
-                index_in_callee,
-                is_signer: *is_signer,
-                is_writable: *is_writable,
-            }
+            InstructionAccount::new(first_tx_idx as IndexOfAccount, *is_signer, *is_writable)
         })
         .collect()
 }
@@ -81,10 +67,8 @@ mod tests {
 
         let acc = &result[0];
         assert_eq!(acc.index_in_transaction, 1); // program_id is 0, this account is 1
-        assert_eq!(acc.index_in_caller, 1);
-        assert_eq!(acc.index_in_callee, 0); // first account in instruction
-        assert!(acc.is_signer);
-        assert!(acc.is_writable);
+        assert!(acc.is_signer());
+        assert!(acc.is_writable());
     }
 
     #[test]
@@ -111,34 +95,26 @@ mod tests {
         // Account A first occurrence (transaction index 1)
         let acc0 = &result[0];
         assert_eq!(acc0.index_in_transaction, 1);
-        assert_eq!(acc0.index_in_caller, 1);
-        assert_eq!(acc0.index_in_callee, 0); // first occurrence
-        assert!(acc0.is_signer); // highest privilege wins
-        assert!(acc0.is_writable); // highest privilege wins
+        assert!(acc0.is_signer()); // highest privilege wins
+        assert!(acc0.is_writable()); // highest privilege wins
 
         // Account B first occurrence (transaction index 2)
         let acc1 = &result[1];
         assert_eq!(acc1.index_in_transaction, 2);
-        assert_eq!(acc1.index_in_caller, 2);
-        assert_eq!(acc1.index_in_callee, 1); // first occurrence
-        assert!(acc1.is_signer); // highest privilege from later usage
-        assert!(acc1.is_writable); // highest privilege from later usage
+        assert!(acc1.is_signer()); // highest privilege from later usage
+        assert!(acc1.is_writable()); // highest privilege from later usage
 
         // Account A second occurrence (same transaction index)
         let acc2 = &result[2];
         assert_eq!(acc2.index_in_transaction, 1); // same as first A
-        assert_eq!(acc2.index_in_caller, 1);
-        assert_eq!(acc2.index_in_callee, 0); // points to first occurrence
-        assert!(acc2.is_signer); // same privileges as first A
-        assert!(acc2.is_writable);
+        assert!(acc2.is_signer()); // same privileges as first A
+        assert!(acc2.is_writable());
 
         // Account B second occurrence (same transaction index)
         let acc3 = &result[3];
         assert_eq!(acc3.index_in_transaction, 2); // same as first B
-        assert_eq!(acc3.index_in_caller, 2);
-        assert_eq!(acc3.index_in_callee, 1); // points to first occurrence
-        assert!(acc3.is_signer);
-        assert!(acc3.is_writable);
+        assert!(acc3.is_signer());
+        assert!(acc3.is_writable());
     }
 
     #[test]
@@ -162,13 +138,9 @@ mod tests {
         // Both should have escalated privileges
         for acc in &result {
             assert_eq!(acc.index_in_transaction, 1); // same account
-            assert!(acc.is_signer); // escalated from false to true
-            assert!(acc.is_writable); // escalated from false to true
+            assert!(acc.is_signer()); // escalated from false to true
+            assert!(acc.is_writable()); // escalated from false to true
         }
-
-        // Check callee indices
-        assert_eq!(result[0].index_in_callee, 0); // first occurrence
-        assert_eq!(result[1].index_in_callee, 0); // points to first occurrence
     }
 
     #[test]
@@ -214,43 +186,39 @@ mod tests {
         // Expected callee indices based on first occurrence
 
         let expected = [
-            (1, 0), // user_account first occurrence
-            (2, 1), // system_program first occurrence
-            (3, 2), // token_account first occurrence
-            (1, 0), // user_account again -> points to first occurrence
-            (2, 1), // system_program again -> points to first occurrence
-            (3, 2), // token_account again -> points to first occurrence
+            1, // user_account first occurrence
+            2, // system_program first occurrence
+            3, // token_account first occurrence
+            1, // user_account again -> points to first occurrence
+            2, // system_program again -> points to first occurrence
+            3, // token_account again -> points to first occurrence
         ];
 
-        for (i, (exp_tx_idx, exp_callee_idx)) in expected.iter().enumerate() {
+        for (i, exp_tx_idx) in expected.iter().enumerate() {
             let acc = &result[i];
             assert_eq!(
                 acc.index_in_transaction as usize, *exp_tx_idx,
                 "Wrong transaction index at position {i}",
             );
-            assert_eq!(
-                acc.index_in_callee as usize, *exp_callee_idx,
-                "Wrong callee index at position {i}",
-            );
         }
 
         // Check privilege escalation
         // user_account: should be signer (from first usage) and writable (from first usage)
-        assert!(result[0].is_signer);
-        assert!(result[0].is_writable);
-        assert!(result[3].is_signer); // same account, same privileges
-        assert!(result[3].is_writable);
+        assert!(result[0].is_signer());
+        assert!(result[0].is_writable());
+        assert!(result[3].is_signer()); // same account, same privileges
+        assert!(result[3].is_writable());
 
         // system_program: should be readonly, non-signer
-        assert!(!result[1].is_signer);
-        assert!(!result[1].is_writable);
-        assert!(!result[4].is_signer);
-        assert!(!result[4].is_writable);
+        assert!(!result[1].is_signer());
+        assert!(!result[1].is_writable());
+        assert!(!result[4].is_signer());
+        assert!(!result[4].is_writable());
 
         // token_account: should be signer (from second usage) and writable (from both usages)
-        assert!(result[2].is_signer);
-        assert!(result[2].is_writable);
-        assert!(result[5].is_signer);
-        assert!(result[5].is_writable);
+        assert!(result[2].is_signer());
+        assert!(result[2].is_writable());
+        assert!(result[5].is_signer());
+        assert!(result[5].is_writable());
     }
 }
