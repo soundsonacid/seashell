@@ -194,6 +194,12 @@ impl Seashell {
         };
     }
 
+    pub fn load_temporary_scenario(&mut self) {
+        let rpc_url = std::env::var("RPC_URL")
+            .expect("RPC_URL environment variable must be set for temporary scenarios");
+        self.accounts_db.scenario = Scenario::rpc_only(rpc_url);
+    }
+
     pub fn process_instruction(&mut self, ixn: Instruction) -> InstructionProcessingResult {
         let transaction_accounts = self
             .accounts_db

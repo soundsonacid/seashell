@@ -19,6 +19,7 @@ use solana_rpc_client::rpc_client::RpcClient;
 /// When an RPC client is provided, missing accounts are fetched and persisted.
 #[derive(Default)]
 pub struct Scenario {
+    should_persist: Cell<bool>,
     dirty: Cell<bool>,
     data: Arc<RwLock<HashMap<Pubkey, AccountSharedData>>>,
     path: Option<PathBuf>,
@@ -93,6 +94,7 @@ impl Scenario {
         };
 
         Scenario {
+            should_persist: Cell::new(true),
             dirty: Cell::new(false),
             data: Arc::new(RwLock::new(data)),
             path: Some(path),
@@ -105,6 +107,16 @@ impl Scenario {
         let mut scenario = Self::from_file(path);
         scenario.rpc_client = Some(RpcClient::new(rpc_url));
         scenario
+    }
+
+    pub fn rpc_only(rpc_url: String) -> Self {
+        Scenario {
+            should_persist: Cell::new(false),
+            dirty: Cell::new(false),
+            data: Arc::new(RwLock::new(HashMap::new())),
+            path: None,
+            rpc_client: Some(RpcClient::new(rpc_url)),
+        }
     }
 
     /// Fetch an account from RPC and store it in the scenario.
@@ -137,7 +149,7 @@ impl Scenario {
 
 impl Drop for Scenario {
     fn drop(&mut self) {
-        if self.dirty.get() {
+        if self.dirty.get() && self.should_persist.get() {
             if let Some(path) = &self.path {
                 // Convert AccountSharedData back to Account for serialization
                 let accounts: HashMap<Pubkey, Account> = self
