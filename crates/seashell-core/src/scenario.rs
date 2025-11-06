@@ -20,6 +20,7 @@ use solana_rpc_client::rpc_client::RpcClient;
 #[derive(Default)]
 pub struct Scenario {
     should_persist: Cell<bool>,
+    allow_uninitialized_accounts: bool,
     dirty: Cell<bool>,
     data: Arc<RwLock<HashMap<Pubkey, AccountSharedData>>>,
     path: Option<PathBuf>,
@@ -81,7 +82,7 @@ serde_with::serde_conv!(
 
 impl Scenario {
     /// Load a scenario from a file, or create an empty one if the file doesn't exist.
-    pub fn from_file(path: PathBuf) -> Self {
+    pub fn from_file(path: PathBuf, allow_uninitialized_accounts: bool) -> Self {
         let data = if path.exists() {
             let serializable: SerializableScenario = read_json_gz(&path);
             serializable
@@ -95,6 +96,7 @@ impl Scenario {
 
         Scenario {
             should_persist: Cell::new(true),
+            allow_uninitialized_accounts,
             dirty: Cell::new(false),
             data: Arc::new(RwLock::new(data)),
             path: Some(path),
@@ -103,15 +105,20 @@ impl Scenario {
     }
 
     /// Load a scenario with RPC fallback enabled.
-    pub fn from_file_with_rpc(path: PathBuf, rpc_url: String) -> Self {
-        let mut scenario = Self::from_file(path);
+    pub fn from_file_with_rpc(
+        path: PathBuf,
+        rpc_url: String,
+        allow_uninitialized_accounts: bool,
+    ) -> Self {
+        let mut scenario = Self::from_file(path, allow_uninitialized_accounts);
         scenario.rpc_client = Some(RpcClient::new(rpc_url));
         scenario
     }
 
-    pub fn rpc_only(rpc_url: String) -> Self {
+    pub fn rpc_only(rpc_url: String, allow_uninitialized_accounts: bool) -> Self {
         Scenario {
             should_persist: Cell::new(false),
+            allow_uninitialized_accounts,
             dirty: Cell::new(false),
             data: Arc::new(RwLock::new(HashMap::new())),
             path: None,
@@ -121,7 +128,7 @@ impl Scenario {
 
     /// Fetch an account from RPC and store it in the scenario.
     /// Panics if RPC is not configured or if the RPC request fails.
-    pub fn fetch_from_rpc(&self, pubkey: &Pubkey) -> AccountSharedData {
+    pub fn try_fetch_from_rpc(&self, pubkey: &Pubkey) -> Option<AccountSharedData> {
         log::debug!("Attempting to fetch account: {pubkey}");
         let rpc_client = self.rpc_client.as_ref().expect(
             "Account not found in scenario or accounts. RPC URL must be configured to fetch \
@@ -129,12 +136,27 @@ impl Scenario {
         );
 
         let failure_msg = format!("Failed to fetch account {pubkey} from RPC");
-        let account = rpc_client.get_account(pubkey).expect(&failure_msg);
-
-        let account_shared: AccountSharedData = account.into();
-        self.dirty.set(true);
-        self.data.write().insert(*pubkey, account_shared.clone());
-        account_shared
+        match rpc_client.get_account(pubkey) {
+            Ok(account) => {
+                let account_shared: AccountSharedData = account.into();
+                self.dirty.set(true);
+                self.data.write().insert(*pubkey, account_shared.clone());
+                Some(account_shared)
+            }
+            // For AccountNotFound, return None if uninitialized accounts are allowed
+            Err(err)
+                if err.to_string().contains("AccountNotFound")
+                    && self.allow_uninitialized_accounts =>
+            {
+                log::debug!(
+                    "Account not found on RPC: {pubkey}. Returning default uninitialized account."
+                );
+                Some(AccountSharedData::default())
+            }
+            Err(err) => {
+                panic!("{failure_msg}: {err}");
+            }
+        }
     }
 
     pub fn get(&self, pubkey: &Pubkey) -> Option<AccountSharedData> {

@@ -47,9 +47,12 @@ impl AccountsDb {
         None
     }
 
-    pub fn account(&self, pubkey: &Pubkey) -> AccountSharedData {
-        self.account_maybe(pubkey)
-            .unwrap_or_else(|| self.scenario.fetch_from_rpc(pubkey))
+    pub fn account_must(&self, pubkey: &Pubkey) -> AccountSharedData {
+        self.account_maybe(pubkey).unwrap_or_else(|| {
+            self.scenario
+                .try_fetch_from_rpc(pubkey)
+                .expect("Account not found")
+        })
     }
 
     pub fn accounts_for_instruction(
@@ -58,7 +61,8 @@ impl AccountsDb {
         instruction: &Instruction,
     ) -> Vec<TransactionAccount> {
         // always insert the program_id of the instruction as the first account.
-        let mut accounts = vec![(instruction.program_id, self.account(&instruction.program_id))];
+        let mut accounts =
+            vec![(instruction.program_id, self.account_must(&instruction.program_id))];
         instruction.accounts.iter().for_each(|meta| {
             let pubkey = meta.pubkey;
             if allow_uninitialized_accounts {
@@ -68,7 +72,7 @@ impl AccountsDb {
                 });
                 accounts.push((pubkey, account))
             } else {
-                accounts.push((pubkey, self.account(&pubkey)))
+                accounts.push((pubkey, self.account_must(&pubkey)))
             }
         });
         accounts

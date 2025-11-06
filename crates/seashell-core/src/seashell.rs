@@ -188,16 +188,21 @@ impl Seashell {
         let scenario_path = workspace_root.join(format!("scenarios/{scenario_name}.json.gz"));
 
         self.accounts_db.scenario = if let Ok(ref rpc_url) = std::env::var("RPC_URL") {
-            Scenario::from_file_with_rpc(scenario_path, rpc_url.clone())
+            Scenario::from_file_with_rpc(
+                scenario_path,
+                rpc_url.clone(),
+                self.config.allow_uninitialized_accounts,
+            )
         } else {
-            Scenario::from_file(scenario_path)
+            Scenario::from_file(scenario_path, self.config.allow_uninitialized_accounts)
         };
     }
 
     pub fn load_temporary_scenario(&mut self) {
         let rpc_url = std::env::var("RPC_URL")
             .expect("RPC_URL environment variable must be set for temporary scenarios");
-        self.accounts_db.scenario = Scenario::rpc_only(rpc_url);
+        self.accounts_db.scenario =
+            Scenario::rpc_only(rpc_url, self.config.allow_uninitialized_accounts);
     }
 
     pub fn process_instruction(&mut self, ixn: Instruction) -> InstructionProcessingResult {
@@ -322,7 +327,7 @@ impl Seashell {
     }
 
     pub fn account(&self, pubkey: &Pubkey) -> Account {
-        self.accounts_db.account(pubkey).into()
+        self.accounts_db.account_must(pubkey).into()
     }
 
     pub fn set_account(&mut self, pubkey: Pubkey, account: Account) {
@@ -779,5 +784,16 @@ mod tests {
 
         let missing_pubkey = Pubkey::from_str_const("NoShot1111111111111111111111111111111111111");
         seashell.account(&missing_pubkey);
+    }
+
+    #[test]
+    fn test_fetch_this_account() {
+        let mut seashell = Seashell::new();
+        unsafe { std::env::set_var("RPC_URL", "https://api.mainnet-beta.solana.com") };
+        seashell.load_temporary_scenario();
+
+        let account = seashell
+            .account(&Pubkey::from_str_const("8X5yDboAEtV1SeoZoG3issAc9zB6qGSe5ZCtJyUz2S5W"));
+        dbg!(&account);
     }
 }
