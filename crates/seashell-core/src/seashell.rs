@@ -311,7 +311,6 @@ impl Seashell {
                 }
             }
             Err(e) => {
-                eprintln!("Error processing ixn: {:?}", &e);
                 InstructionProcessingResult {
                     compute_units_consumed,
                     return_data,
