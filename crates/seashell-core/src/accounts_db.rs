@@ -55,6 +55,7 @@ impl AccountsDb {
         })
     }
 
+    /// Panics if unable to find any account.
     pub fn accounts_for_instruction(
         &mut self,
         allow_uninitialized_accounts: bool,
@@ -65,15 +66,28 @@ impl AccountsDb {
             vec![(instruction.program_id, self.account_must(&instruction.program_id))];
         instruction.accounts.iter().for_each(|meta| {
             let pubkey = meta.pubkey;
-            if allow_uninitialized_accounts {
-                let account = self.account_maybe(&pubkey).unwrap_or_else(|| {
-                    log::debug!("Creating uninitialized account for {pubkey}");
-                    AccountSharedData::default()
-                });
-                accounts.push((pubkey, account))
-            } else {
-                accounts.push((pubkey, self.account_must(&pubkey)))
+            // first, check local cache
+            if let Some(account) = self.account_maybe(&pubkey) {
+                accounts.push((pubkey, account));
+                return;
             }
+
+            // if account is not present in local cache, attempt to fetch from rpc
+            if self.scenario.rpc_enabled() {
+                if let Some(account) = self.scenario.try_fetch_from_rpc(&pubkey) {
+                    accounts.push((pubkey, account));
+                    return;
+                }
+            }
+
+            // finally, if still not found, handle according to allow_uninitialized_accounts
+            if allow_uninitialized_accounts {
+                log::debug!("Creating uninitialized account for {pubkey}");
+                accounts.push((pubkey, AccountSharedData::default()));
+                return;
+            }
+
+            panic!("Account not found for {pubkey}");
         });
         accounts
     }

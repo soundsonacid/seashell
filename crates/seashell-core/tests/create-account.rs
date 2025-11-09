@@ -7,7 +7,8 @@ use solana_pubkey::Pubkey;
 fn test_create_account() {
     let mut seashell = Seashell::new_with_config(seashell::Config {
         memoize: true,
-        allow_uninitialized_accounts: true,
+        allow_uninitialized_accounts_local: true,
+        allow_uninitialized_accounts_fetched: true,
     });
     let account_loader_out_dir = try_find_workspace_root()
         .unwrap()

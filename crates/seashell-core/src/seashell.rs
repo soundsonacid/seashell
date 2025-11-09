@@ -23,14 +23,19 @@ use crate::scenario::Scenario;
 
 pub struct Config {
     pub memoize: bool,
-    pub allow_uninitialized_accounts: bool,
+    pub allow_uninitialized_accounts_local: bool,
+    pub allow_uninitialized_accounts_fetched: bool,
 }
 
 // Allow deriving Default manually to be explicit about configuration defaults
 #[allow(clippy::derivable_impls)]
 impl Default for Config {
     fn default() -> Self {
-        Config { memoize: false, allow_uninitialized_accounts: false }
+        Config {
+            memoize: false,
+            allow_uninitialized_accounts_local: false,
+            allow_uninitialized_accounts_fetched: false,
+        }
     }
 }
 
@@ -191,10 +196,10 @@ impl Seashell {
             Scenario::from_file_with_rpc(
                 scenario_path,
                 rpc_url.clone(),
-                self.config.allow_uninitialized_accounts,
+                self.config.allow_uninitialized_accounts_fetched,
             )
         } else {
-            Scenario::from_file(scenario_path, self.config.allow_uninitialized_accounts)
+            Scenario::from_file(scenario_path, self.config.allow_uninitialized_accounts_fetched)
         };
     }
 
@@ -202,13 +207,13 @@ impl Seashell {
         let rpc_url = std::env::var("RPC_URL")
             .expect("RPC_URL environment variable must be set for temporary scenarios");
         self.accounts_db.scenario =
-            Scenario::rpc_only(rpc_url, self.config.allow_uninitialized_accounts);
+            Scenario::rpc_only(rpc_url, self.config.allow_uninitialized_accounts_fetched);
     }
 
     pub fn process_instruction(&mut self, ixn: Instruction) -> InstructionProcessingResult {
         let transaction_accounts = self
             .accounts_db
-            .accounts_for_instruction(self.config.allow_uninitialized_accounts, &ixn);
+            .accounts_for_instruction(self.config.allow_uninitialized_accounts_local, &ixn);
 
         let sysvar_cache = self
             .accounts_db
@@ -553,7 +558,8 @@ mod tests {
         crate::set_log();
         let mut seashell = Seashell::new_with_config(Config {
             memoize: true,
-            allow_uninitialized_accounts: false,
+            allow_uninitialized_accounts_local: false,
+            allow_uninitialized_accounts_fetched: false,
         });
 
         let from = solana_pubkey::Pubkey::new_unique();
@@ -705,7 +711,8 @@ mod tests {
 
         let mut seashell = Seashell::new_with_config(Config {
             memoize: false,
-            allow_uninitialized_accounts: false,
+            allow_uninitialized_accounts_local: false,
+            allow_uninitialized_accounts_fetched: false,
         });
 
         let pubkey1 = Pubkey::from_str_const("B91piBSfCBRs5rUxCMRdJEGv7tNEnFxweWcdQJHJoFpi");
@@ -765,8 +772,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Account not found in scenario or accounts. RPC URL must be \
-                               configured to fetch missing accounts.")]
+    #[should_panic(expected = "Account not found")]
     fn test_missing_account_without_rpc() {
         let mut seashell = Seashell::new();
 
@@ -784,16 +790,5 @@ mod tests {
 
         let missing_pubkey = Pubkey::from_str_const("NoShot1111111111111111111111111111111111111");
         seashell.account(&missing_pubkey);
-    }
-
-    #[test]
-    fn test_fetch_this_account() {
-        let mut seashell = Seashell::new();
-        unsafe { std::env::set_var("RPC_URL", "https://api.mainnet-beta.solana.com") };
-        seashell.load_temporary_scenario();
-
-        let account = seashell
-            .account(&Pubkey::from_str_const("8X5yDboAEtV1SeoZoG3issAc9zB6qGSe5ZCtJyUz2S5W"));
-        dbg!(&account);
     }
 }

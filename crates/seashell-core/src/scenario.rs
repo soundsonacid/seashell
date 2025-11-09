@@ -20,7 +20,7 @@ use solana_rpc_client::rpc_client::RpcClient;
 #[derive(Default)]
 pub struct Scenario {
     should_persist: Cell<bool>,
-    allow_uninitialized_accounts: bool,
+    pub(crate) allow_uninitialized_accounts: bool,
     dirty: Cell<bool>,
     data: Arc<RwLock<HashMap<Pubkey, AccountSharedData>>>,
     path: Option<PathBuf>,
@@ -128,6 +128,10 @@ impl Scenario {
 
     /// Fetch an account from RPC and store it in the scenario.
     /// Panics if RPC is not configured or if the RPC request fails.
+    pub fn must_fetch_from_rpc(&self, pubkey: &Pubkey) -> AccountSharedData {
+        self.try_fetch_from_rpc(pubkey).unwrap()
+    }
+
     pub fn try_fetch_from_rpc(&self, pubkey: &Pubkey) -> Option<AccountSharedData> {
         log::debug!("Attempting to fetch account: {pubkey}");
         let rpc_client = self.rpc_client.as_ref().expect(
@@ -135,7 +139,6 @@ impl Scenario {
              missing accounts.",
         );
 
-        let failure_msg = format!("Failed to fetch account {pubkey} from RPC");
         match rpc_client.get_account(pubkey) {
             Ok(account) => {
                 let account_shared: AccountSharedData = account.into();
@@ -153,9 +156,7 @@ impl Scenario {
                 );
                 Some(AccountSharedData::default())
             }
-            Err(err) => {
-                panic!("{failure_msg}: {err}");
-            }
+            Err(_) => None,
         }
     }
 
@@ -166,6 +167,10 @@ impl Scenario {
     pub fn insert(&mut self, pubkey: Pubkey, account: AccountSharedData) {
         self.dirty.set(true);
         self.data.write().insert(pubkey, account);
+    }
+
+    pub fn rpc_enabled(&self) -> bool {
+        self.rpc_client.is_some()
     }
 }
 
