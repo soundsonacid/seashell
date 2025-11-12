@@ -210,7 +210,7 @@ impl Seashell {
             Scenario::rpc_only(rpc_url, self.config.allow_uninitialized_accounts_fetched);
     }
 
-    pub fn process_instruction(&mut self, ixn: Instruction) -> InstructionProcessingResult {
+    pub fn process_instruction(&self, ixn: Instruction) -> InstructionProcessingResult {
         let transaction_accounts = self
             .accounts_db
             .accounts_for_instruction(self.config.allow_uninitialized_accounts_local, &ixn);
@@ -248,9 +248,10 @@ impl Seashell {
 
         let epoch_stake_callback = SeashellInvokeContextCallback { feature_set: &self.feature_set };
         let runtime_features = self.feature_set.runtime_features();
+        let mut programs = self.accounts_db.programs.clone();
         let mut invoke_context = InvokeContext::new(
             &mut transaction_context,
-            &mut self.accounts_db.programs,
+            &mut programs,
             EnvironmentConfig::new(
                 Hash::default(),
                 /* blockhash_lamports_per_signature */ 5000, // The default value
@@ -334,12 +335,12 @@ impl Seashell {
         self.accounts_db.account_must(pubkey).into()
     }
 
-    pub fn set_account(&mut self, pubkey: Pubkey, account: Account) {
+    pub fn set_account(&self, pubkey: Pubkey, account: Account) {
         self.accounts_db.set_account(pubkey, account.into());
     }
 
     pub fn set_account_from_account_shared_data(
-        &mut self,
+        &self,
         pubkey: Pubkey,
         account: AccountSharedData,
     ) {
@@ -600,7 +601,7 @@ mod tests {
     fn test_precompiles() {
         const MESSAGE_LENGTH: usize = 128;
         crate::set_log();
-        let mut seashell = Seashell::new();
+        let seashell = Seashell::new();
 
         use rand::{thread_rng, Rng};
         let mut rng = thread_rng();
@@ -690,12 +691,10 @@ mod tests {
             .load_program_from_environment("associated_token", associated_token)
             .unwrap();
 
-        assert!(seashell.accounts_db.accounts.contains_key(&tokenkeg));
-        assert!(seashell.accounts_db.accounts.contains_key(&token22));
-        assert!(seashell
-            .accounts_db
-            .accounts
-            .contains_key(&associated_token));
+        let reader = seashell.accounts_db.accounts.read();
+        assert!(reader.contains_key(&tokenkeg));
+        assert!(reader.contains_key(&token22));
+        assert!(reader.contains_key(&associated_token));
     }
 
     #[test]

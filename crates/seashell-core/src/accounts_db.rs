@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use agave_feature_set::FeatureSet;
 use agave_syscalls::create_program_runtime_environment_v1;
+use parking_lot::RwLock;
 use solana_account::{AccountSharedData, ReadableAccount, WritableAccount};
 use solana_compute_budget::compute_budget::ComputeBudget;
 use solana_instruction::Instruction;
@@ -23,7 +24,7 @@ pub fn mock_account_shared_data(pubkey: Pubkey) -> AccountSharedData {
 #[derive(Default)]
 pub struct AccountsDb {
     pub scenario: Scenario,
-    pub accounts: HashMap<Pubkey, AccountSharedData>,
+    pub accounts: RwLock<HashMap<Pubkey, AccountSharedData>>,
     pub programs: ProgramCacheForTxBatch,
     pub sysvars: Sysvars,
 }
@@ -40,7 +41,7 @@ impl AccountsDb {
         }
 
         // 2. Check regular accounts
-        if let Some(account) = self.accounts.get(pubkey) {
+        if let Some(account) = self.accounts.read().get(pubkey) {
             return Some(account.clone());
         }
 
@@ -57,7 +58,7 @@ impl AccountsDb {
 
     /// Panics if unable to find any account.
     pub fn accounts_for_instruction(
-        &mut self,
+        &self,
         allow_uninitialized_accounts: bool,
         instruction: &Instruction,
     ) -> Vec<TransactionAccount> {
@@ -118,11 +119,11 @@ impl AccountsDb {
         });
     }
 
-    pub fn set_account(&mut self, pubkey: Pubkey, account: AccountSharedData) {
+    pub fn set_account(&self, pubkey: Pubkey, account: AccountSharedData) {
         if self.sysvars.is_sysvar(&pubkey) {
             self.sysvars.set(&pubkey, account)
         } else {
-            self.accounts.insert(pubkey, account);
+            self.accounts.write().insert(pubkey, account);
         }
     }
 
