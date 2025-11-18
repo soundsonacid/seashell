@@ -355,6 +355,10 @@ impl Seashell {
     pub fn clear_non_program_accounts(&self) {
         self.accounts_db.clear_non_program_accounts();
     }
+
+    pub fn warp(&self, slot: u64, timestamp: u64) {
+        self.accounts_db.warp(slot, timestamp as i64);
+    }
 }
 
 pub struct InstructionProcessingResult {

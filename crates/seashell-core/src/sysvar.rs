@@ -145,4 +145,10 @@ impl Sysvars {
             _ => panic!("Unknown sysvar: {sysvar}"),
         }
     }
+
+    pub fn warp(&self, slot: u64, timestamp: i64) {
+        let mut clock = self.clock.write();
+        clock.slot = slot;
+        clock.unix_timestamp = timestamp;
+    }
 }

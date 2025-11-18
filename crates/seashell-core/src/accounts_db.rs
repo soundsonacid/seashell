@@ -34,6 +34,10 @@ impl AccountsDb {
         self.accounts.write().retain(|_, account| account.executable());
     }
 
+    pub fn warp(&self, slot: u64, timestamp: i64) {
+        self.sysvars.warp(slot, timestamp);
+    }
+
     pub fn account_maybe(&self, pubkey: &Pubkey) -> Option<AccountSharedData> {
         if self.sysvars.is_sysvar(pubkey) {
             return Some(self.sysvars.get(pubkey));
