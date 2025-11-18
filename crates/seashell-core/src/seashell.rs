@@ -351,6 +351,10 @@ impl Seashell {
     ) {
         self.accounts_db.set_account(pubkey, account);
     }
+
+    pub fn clear_non_program_accounts(&self) {
+        self.accounts_db.clear_non_program_accounts();
+    }
 }
 
 pub struct InstructionProcessingResult {

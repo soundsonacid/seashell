@@ -30,6 +30,10 @@ pub struct AccountsDb {
 }
 
 impl AccountsDb {
+    pub fn clear_non_program_accounts(&self) {
+        self.accounts.write().retain(|_, account| account.executable());
+    }
+
     pub fn account_maybe(&self, pubkey: &Pubkey) -> Option<AccountSharedData> {
         if self.sysvars.is_sysvar(pubkey) {
             return Some(self.sysvars.get(pubkey));
