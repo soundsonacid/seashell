@@ -105,6 +105,11 @@ impl Seashell {
         seashell
     }
 
+    /// Replaces the Tokenkeg binary with the P-Token binary.
+    pub fn use_p_token(&mut self) {
+        crate::spl::load_p_token(self);
+    }
+
     pub fn new_with_config(config: Config) -> Self {
         let mut seashell = Seashell::new();
         seashell.config = config;
@@ -789,4 +794,72 @@ mod tests {
         let missing_pubkey = Pubkey::from_str_const("NoShot1111111111111111111111111111111111111");
         seashell.account(&missing_pubkey);
     }
+
+    #[test]
+    fn test_spl_transfer_p_token() {
+        crate::set_log();
+        let mut seashell = Seashell::new();
+        seashell.use_p_token();
+        let from: Pubkey = solana_pubkey::Pubkey::new_unique();
+        let to = solana_pubkey::Pubkey::new_unique();
+        let from_authority = solana_pubkey::Pubkey::new_unique();
+        let mint = solana_pubkey::Pubkey::new_unique();
+
+        create_mint_account(&mut seashell, mint, 1000);
+        create_token_account(&mut seashell, from, mint, from_authority, 1000);
+        create_token_account(&mut seashell, to, mint, Pubkey::new_unique(), 0);
+        seashell.airdrop(from_authority, 1000);
+
+        let mut data = [0; 9];
+        data[0] = 3;
+        data[1..9].copy_from_slice(&500u64.to_le_bytes());
+
+        let ixn = Instruction {
+            program_id: crate::spl::TOKEN_PROGRAM_ID,
+            accounts: vec![
+                AccountMeta::new(from, true),
+                AccountMeta::new(to, false),
+                AccountMeta::new_readonly(from_authority, true),
+            ],
+            data: data.to_vec(),
+        };
+
+        let result = seashell.process_instruction(ixn);
+
+        assert!(result.error.is_none(), "Expected no error, got: {:?}", result.error);
+        assert_eq!(result.compute_units_consumed, 82);
+
+        let post_from = result
+            .post_execution_accounts
+            .iter()
+            .find(|(pubkey, _)| *pubkey == from)
+            .expect("Resulting account should exist")
+            .to_owned()
+            .1;
+        let post_from_balance = u64::from_le_bytes(post_from.data[64..72].try_into().unwrap());
+        assert_eq!(
+            post_from_balance, 500,
+            "Expected from token account to have 500 tokens after transfer"
+        );
+
+        let post_to = result
+            .post_execution_accounts
+            .iter()
+            .find(|(pubkey, _)| *pubkey == to)
+            .expect("Resulting account should exist")
+            .to_owned()
+            .1;
+        let post_to_balance = u64::from_le_bytes(post_to.data[64..72].try_into().unwrap());
+        assert_eq!(
+            post_to_balance, 500,
+            "Expected to token account to have 500 tokens after transfer"
+        );
+
+        assert!(
+            result.return_data.is_empty(),
+            "Expected no return data, got: {:?}",
+            result.return_data
+        );
+    }
+
 }
