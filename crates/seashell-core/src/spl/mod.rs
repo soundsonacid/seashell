@@ -15,3 +15,10 @@ pub fn load(seashell: &mut Seashell) {
     );
     seashell.load_program_from_bytes(TOKEN_2022_PROGRAM_ID, include_bytes!("elfs/token22.so"));
 }
+
+pub fn load_p_token(seashell: &mut Seashell) {
+    seashell.load_program_from_bytes(
+        TOKEN_PROGRAM_ID,
+        include_bytes!("elfs/ptoken.so"),
+    );
+}

@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use agave_feature_set::FeatureSet;
 use agave_syscalls::create_program_runtime_environment_v1;
+use parking_lot::RwLock;
 use solana_account::{AccountSharedData, ReadableAccount, WritableAccount};
 use solana_compute_budget::compute_budget::ComputeBudget;
 use solana_instruction::Instruction;
@@ -14,7 +15,7 @@ use solana_pubkey::Pubkey;
 use solana_transaction_context::TransactionAccount;
 
 use crate::scenario::Scenario;
-use crate::sysvar::Sysvars;
+use crate::sysvar::{SysvarInstructions, Sysvars};
 
 pub fn mock_account_shared_data(pubkey: Pubkey) -> AccountSharedData {
     AccountSharedData::new(0, 0, &pubkey)
@@ -23,12 +24,20 @@ pub fn mock_account_shared_data(pubkey: Pubkey) -> AccountSharedData {
 #[derive(Default)]
 pub struct AccountsDb {
     pub scenario: Scenario,
-    pub accounts: HashMap<Pubkey, AccountSharedData>,
+    pub accounts: RwLock<HashMap<Pubkey, AccountSharedData>>,
     pub programs: ProgramCacheForTxBatch,
     pub sysvars: Sysvars,
 }
 
 impl AccountsDb {
+    pub fn clear_non_program_accounts(&self) {
+        self.accounts.write().retain(|_, account| account.executable());
+    }
+
+    pub fn warp(&self, slot: u64, timestamp: i64) {
+        self.sysvars.warp(slot, timestamp);
+    }
+
     pub fn account_maybe(&self, pubkey: &Pubkey) -> Option<AccountSharedData> {
         if self.sysvars.is_sysvar(pubkey) {
             return Some(self.sysvars.get(pubkey));
@@ -40,36 +49,61 @@ impl AccountsDb {
         }
 
         // 2. Check regular accounts
-        if let Some(account) = self.accounts.get(pubkey) {
+        if let Some(account) = self.accounts.read().get(pubkey) {
             return Some(account.clone());
         }
 
         None
     }
 
-    pub fn account(&mut self, pubkey: &Pubkey) -> AccountSharedData {
-        self.account_maybe(pubkey)
-            .unwrap_or_else(|| self.scenario.fetch_from_rpc(pubkey))
+    pub fn account_must(&self, pubkey: &Pubkey) -> AccountSharedData {
+        self.account_maybe(pubkey).unwrap_or_else(|| {
+            self.scenario
+                .try_fetch_from_rpc(pubkey)
+                .expect("Account not found")
+        })
     }
 
+    /// Panics if unable to find any account.
     pub fn accounts_for_instruction(
-        &mut self,
+        &self,
         allow_uninitialized_accounts: bool,
         instruction: &Instruction,
     ) -> Vec<TransactionAccount> {
         // always insert the program_id of the instruction as the first account.
-        let mut accounts = vec![(instruction.program_id, self.account(&instruction.program_id))];
+        let mut accounts =
+            vec![(instruction.program_id, self.account_must(&instruction.program_id))];
         instruction.accounts.iter().for_each(|meta| {
-            let pubkey = meta.pubkey;
-            if allow_uninitialized_accounts {
-                let account = self.account_maybe(&pubkey).unwrap_or_else(|| {
-                    log::debug!("Creating uninitialized account for {pubkey}");
-                    AccountSharedData::default()
-                });
-                accounts.push((pubkey, account))
-            } else {
-                accounts.push((pubkey, self.account(&pubkey)))
+            if meta.pubkey == solana_sdk_ids::sysvar::instructions::id() {
+                // sysvar instructions needs to be handled specially
+                let account = SysvarInstructions::construct_instructions_account(instruction);
+                accounts.push((meta.pubkey, account));
+                return;
             }
+
+            let pubkey = meta.pubkey;
+            // first, check local cache
+            if let Some(account) = self.account_maybe(&pubkey) {
+                accounts.push((pubkey, account));
+                return;
+            }
+
+            // if account is not present in local cache, attempt to fetch from rpc
+            if self.scenario.rpc_enabled() {
+                if let Some(account) = self.scenario.try_fetch_from_rpc(&pubkey) {
+                    accounts.push((pubkey, account));
+                    return;
+                }
+            }
+
+            // finally, if still not found, handle according to allow_uninitialized_accounts
+            if allow_uninitialized_accounts {
+                log::debug!("Creating uninitialized account for {pubkey}");
+                accounts.push((pubkey, AccountSharedData::default()));
+                return;
+            }
+
+            panic!("Account not found for {pubkey}");
         });
         accounts
     }
@@ -100,11 +134,11 @@ impl AccountsDb {
         });
     }
 
-    pub fn set_account(&mut self, pubkey: Pubkey, account: AccountSharedData) {
+    pub fn set_account(&self, pubkey: Pubkey, account: AccountSharedData) {
         if self.sysvars.is_sysvar(&pubkey) {
             self.sysvars.set(&pubkey, account)
         } else {
-            self.accounts.insert(pubkey, account);
+            self.accounts.write().insert(pubkey, account);
         }
     }
 

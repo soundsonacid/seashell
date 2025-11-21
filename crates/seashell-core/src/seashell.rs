@@ -21,10 +21,22 @@ use crate::compile::{compile_accounts_for_instruction, INSTRUCTION_PROGRAM_ID_IN
 use crate::error::SeashellError;
 use crate::scenario::Scenario;
 
-#[derive(Default)]
 pub struct Config {
     pub memoize: bool,
-    pub allow_uninitialized_accounts: bool,
+    pub allow_uninitialized_accounts_local: bool,
+    pub allow_uninitialized_accounts_fetched: bool,
+}
+
+// Allow deriving Default manually to be explicit about configuration defaults
+#[allow(clippy::derivable_impls)]
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            memoize: false,
+            allow_uninitialized_accounts_local: false,
+            allow_uninitialized_accounts_fetched: false,
+        }
+    }
 }
 
 pub struct Seashell {
@@ -34,6 +46,9 @@ pub struct Seashell {
     pub feature_set: FeatureSet,
     pub log_collector: Option<Rc<RefCell<LogCollector>>>,
 }
+
+unsafe impl Send for Seashell {}
+unsafe impl Sync for Seashell {}
 
 impl Default for Seashell {
     fn default() -> Self {
@@ -88,6 +103,11 @@ impl Seashell {
         seashell.load_precompiles();
 
         seashell
+    }
+
+    /// Replaces the Tokenkeg binary with the P-Token binary.
+    pub fn use_p_token(&mut self) {
+        crate::spl::load_p_token(self);
     }
 
     pub fn new_with_config(config: Config) -> Self {
@@ -146,8 +166,11 @@ impl Seashell {
             let entry = entry_maybe?;
             let path = entry.path();
 
-            if path.extension().is_some_and(|ext| *ext == *"so")
-                && path.file_prefix().is_some_and(|pre| *pre == *program_name)
+            if path.extension().is_some_and(|ext| ext == "so")
+                && path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .is_some_and(|stem| stem == program_name)
             {
                 let program_bytes = std::fs::read(path)?;
                 self.accounts_db.load_program_from_bytes_with_loader(
@@ -175,16 +198,27 @@ impl Seashell {
         let scenario_path = workspace_root.join(format!("scenarios/{scenario_name}.json.gz"));
 
         self.accounts_db.scenario = if let Ok(ref rpc_url) = std::env::var("RPC_URL") {
-            Scenario::from_file_with_rpc(scenario_path, rpc_url.clone())
+            Scenario::from_file_with_rpc(
+                scenario_path,
+                rpc_url.clone(),
+                self.config.allow_uninitialized_accounts_fetched,
+            )
         } else {
-            Scenario::from_file(scenario_path)
+            Scenario::from_file(scenario_path, self.config.allow_uninitialized_accounts_fetched)
         };
     }
 
-    pub fn process_instruction(&mut self, ixn: Instruction) -> InstructionProcessingResult {
+    pub fn load_temporary_scenario(&mut self) {
+        let rpc_url = std::env::var("RPC_URL")
+            .expect("RPC_URL environment variable must be set for temporary scenarios");
+        self.accounts_db.scenario =
+            Scenario::rpc_only(rpc_url, self.config.allow_uninitialized_accounts_fetched);
+    }
+
+    pub fn process_instruction(&self, ixn: Instruction) -> InstructionProcessingResult {
         let transaction_accounts = self
             .accounts_db
-            .accounts_for_instruction(self.config.allow_uninitialized_accounts, &ixn);
+            .accounts_for_instruction(self.config.allow_uninitialized_accounts_local, &ixn);
 
         let sysvar_cache = self
             .accounts_db
@@ -219,9 +253,10 @@ impl Seashell {
 
         let epoch_stake_callback = SeashellInvokeContextCallback { feature_set: &self.feature_set };
         let runtime_features = self.feature_set.runtime_features();
+        let mut programs = self.accounts_db.programs.clone();
         let mut invoke_context = InvokeContext::new(
             &mut transaction_context,
-            &mut self.accounts_db.programs,
+            &mut programs,
             EnvironmentConfig::new(
                 Hash::default(),
                 /* blockhash_lamports_per_signature */ 5000, // The default value
@@ -282,7 +317,6 @@ impl Seashell {
                 }
             }
             Err(e) => {
-                eprintln!("Error processing ixn: {:?}", &e);
                 InstructionProcessingResult {
                     compute_units_consumed,
                     return_data,
@@ -302,20 +336,28 @@ impl Seashell {
         self.set_account_from_account_shared_data(pubkey, account);
     }
 
-    pub fn account(&mut self, pubkey: &Pubkey) -> Account {
-        self.accounts_db.account(pubkey).into()
+    pub fn account(&self, pubkey: &Pubkey) -> Account {
+        self.accounts_db.account_must(pubkey).into()
     }
 
-    pub fn set_account(&mut self, pubkey: Pubkey, account: Account) {
+    pub fn set_account(&self, pubkey: Pubkey, account: Account) {
         self.accounts_db.set_account(pubkey, account.into());
     }
 
     pub fn set_account_from_account_shared_data(
-        &mut self,
+        &self,
         pubkey: Pubkey,
         account: AccountSharedData,
     ) {
         self.accounts_db.set_account(pubkey, account);
+    }
+
+    pub fn clear_non_program_accounts(&self) {
+        self.accounts_db.clear_non_program_accounts();
+    }
+
+    pub fn warp(&self, slot: u64, timestamp: u64) {
+        self.accounts_db.warp(slot, timestamp as i64);
     }
 }
 
@@ -529,7 +571,8 @@ mod tests {
         crate::set_log();
         let mut seashell = Seashell::new_with_config(Config {
             memoize: true,
-            allow_uninitialized_accounts: false,
+            allow_uninitialized_accounts_local: false,
+            allow_uninitialized_accounts_fetched: false,
         });
 
         let from = solana_pubkey::Pubkey::new_unique();
@@ -571,7 +614,7 @@ mod tests {
     fn test_precompiles() {
         const MESSAGE_LENGTH: usize = 128;
         crate::set_log();
-        let mut seashell = Seashell::new();
+        let seashell = Seashell::new();
 
         use rand::{thread_rng, Rng};
         let mut rng = thread_rng();
@@ -661,12 +704,10 @@ mod tests {
             .load_program_from_environment("associated_token", associated_token)
             .unwrap();
 
-        assert!(seashell.accounts_db.accounts.contains_key(&tokenkeg));
-        assert!(seashell.accounts_db.accounts.contains_key(&token22));
-        assert!(seashell
-            .accounts_db
-            .accounts
-            .contains_key(&associated_token));
+        let reader = seashell.accounts_db.accounts.read();
+        assert!(reader.contains_key(&tokenkeg));
+        assert!(reader.contains_key(&token22));
+        assert!(reader.contains_key(&associated_token));
     }
 
     #[test]
@@ -681,7 +722,8 @@ mod tests {
 
         let mut seashell = Seashell::new_with_config(Config {
             memoize: false,
-            allow_uninitialized_accounts: false,
+            allow_uninitialized_accounts_local: false,
+            allow_uninitialized_accounts_fetched: false,
         });
 
         let pubkey1 = Pubkey::from_str_const("B91piBSfCBRs5rUxCMRdJEGv7tNEnFxweWcdQJHJoFpi");
@@ -741,8 +783,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Account not found in scenario or accounts. RPC URL must be \
-                               configured to fetch missing accounts.")]
+    #[should_panic(expected = "Account not found")]
     fn test_missing_account_without_rpc() {
         let mut seashell = Seashell::new();
 
@@ -758,7 +799,75 @@ mod tests {
         unsafe { std::env::remove_var("RPC_URL") }
         seashell.load_scenario("test_no_rpc");
 
-        let missing_pubkey = Pubkey::new_unique();
+        let missing_pubkey = Pubkey::from_str_const("NoShot1111111111111111111111111111111111111");
         seashell.account(&missing_pubkey);
     }
+
+    #[test]
+    fn test_spl_transfer_p_token() {
+        crate::set_log();
+        let mut seashell = Seashell::new();
+        seashell.use_p_token();
+        let from: Pubkey = solana_pubkey::Pubkey::new_unique();
+        let to = solana_pubkey::Pubkey::new_unique();
+        let from_authority = solana_pubkey::Pubkey::new_unique();
+        let mint = solana_pubkey::Pubkey::new_unique();
+
+        create_mint_account(&mut seashell, mint, 1000);
+        create_token_account(&mut seashell, from, mint, from_authority, 1000);
+        create_token_account(&mut seashell, to, mint, Pubkey::new_unique(), 0);
+        seashell.airdrop(from_authority, 1000);
+
+        let mut data = [0; 9];
+        data[0] = 3;
+        data[1..9].copy_from_slice(&500u64.to_le_bytes());
+
+        let ixn = Instruction {
+            program_id: crate::spl::TOKEN_PROGRAM_ID,
+            accounts: vec![
+                AccountMeta::new(from, true),
+                AccountMeta::new(to, false),
+                AccountMeta::new_readonly(from_authority, true),
+            ],
+            data: data.to_vec(),
+        };
+
+        let result = seashell.process_instruction(ixn);
+
+        assert!(result.error.is_none(), "Expected no error, got: {:?}", result.error);
+        assert_eq!(result.compute_units_consumed, 82);
+
+        let post_from = result
+            .post_execution_accounts
+            .iter()
+            .find(|(pubkey, _)| *pubkey == from)
+            .expect("Resulting account should exist")
+            .to_owned()
+            .1;
+        let post_from_balance = u64::from_le_bytes(post_from.data[64..72].try_into().unwrap());
+        assert_eq!(
+            post_from_balance, 500,
+            "Expected from token account to have 500 tokens after transfer"
+        );
+
+        let post_to = result
+            .post_execution_accounts
+            .iter()
+            .find(|(pubkey, _)| *pubkey == to)
+            .expect("Resulting account should exist")
+            .to_owned()
+            .1;
+        let post_to_balance = u64::from_le_bytes(post_to.data[64..72].try_into().unwrap());
+        assert_eq!(
+            post_to_balance, 500,
+            "Expected to token account to have 500 tokens after transfer"
+        );
+
+        assert!(
+            result.return_data.is_empty(),
+            "Expected no return data, got: {:?}",
+            result.return_data
+        );
+    }
+
 }
