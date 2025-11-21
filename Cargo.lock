@@ -2631,6 +2631,7 @@ dependencies = [
  "solana-epoch-schedule",
  "solana-hash 3.1.0",
  "solana-instruction",
+ "solana-instructions-sysvar",
  "solana-logger",
  "solana-precompile-error",
  "solana-program-runtime",
@@ -3350,6 +3351,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ddf67876c541aa1e21ee1acae35c95c6fbc61119814bfef70579317a5e26955"
 dependencies = [
  "bitflags",
+ "qualifier_attr",
  "solana-account-info",
  "solana-instruction",
  "solana-instruction-error",

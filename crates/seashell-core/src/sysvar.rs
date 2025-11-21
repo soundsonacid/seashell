@@ -1,9 +1,10 @@
 use parking_lot::RwLock;
-use solana_account::{AccountSharedData, ReadableAccount};
+use solana_account::{Account, AccountSharedData, ReadableAccount};
 use solana_clock::Clock;
 use solana_epoch_rewards::EpochRewards;
 use solana_epoch_schedule::EpochSchedule;
 use solana_hash::Hash;
+use solana_instruction::{BorrowedAccountMeta, BorrowedInstruction, Instruction};
 use solana_pubkey::Pubkey;
 use solana_rent::Rent;
 use solana_slot_hashes::{SlotHashes, MAX_ENTRIES};
@@ -150,5 +151,33 @@ impl Sysvars {
         let mut clock = self.clock.write();
         clock.slot = slot;
         clock.unix_timestamp = timestamp;
+    }
+}
+
+pub struct SysvarInstructions;
+
+impl SysvarInstructions {
+    pub fn construct_instructions_account(instruction: &Instruction) -> AccountSharedData {
+        let borrowed_accounts = instruction.accounts.iter().map(|meta| {
+            BorrowedAccountMeta {
+                pubkey: &meta.pubkey,
+                is_signer: meta.is_signer,
+                is_writable: meta.is_writable,
+            }
+        }).collect::<Vec<_>>();
+
+        let borrowed_instruction = BorrowedInstruction {
+            program_id: &instruction.program_id,
+            accounts: borrowed_accounts,
+            data: &instruction.data,
+        };
+
+        let sysvar_instructions_data = solana_instructions_sysvar::construct_instructions_data(&[borrowed_instruction]);
+
+        AccountSharedData::from(Account {
+            data: sysvar_instructions_data,
+            owner: solana_sdk_ids::sysvar::id(),
+            ..Account::default()
+        })
     }
 }

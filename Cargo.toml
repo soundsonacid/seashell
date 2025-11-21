@@ -1,6 +1,6 @@
 [workspace]
 members = ["crates/seashell-core"]
-exclude = ["programs/account-loader", "programs/sysvar", "programs/create-account"]
+exclude = ["programs/account-loader", "programs/sysvar", "programs/create-account", "programs/sysvar_ixns"]
 resolver = "2"
 
 [workspace.dependencies]
@@ -29,6 +29,7 @@ solana-epoch-rewards = "3.0.0"
 solana-epoch-schedule = "3.0.0"
 solana-hash = "3.0.0"
 solana-instruction = "3.0.0"
+solana-instructions-sysvar = { version = "3.0.0", features = ["dev-context-only-utils"] }
 solana-logger = "2.3"
 solana-precompile-error = "3.0.0"
 solana-program-runtime = "3.0.3"

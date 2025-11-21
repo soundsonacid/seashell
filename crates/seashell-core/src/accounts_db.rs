@@ -15,7 +15,7 @@ use solana_pubkey::Pubkey;
 use solana_transaction_context::TransactionAccount;
 
 use crate::scenario::Scenario;
-use crate::sysvar::Sysvars;
+use crate::sysvar::{SysvarInstructions, Sysvars};
 
 pub fn mock_account_shared_data(pubkey: Pubkey) -> AccountSharedData {
     AccountSharedData::new(0, 0, &pubkey)
@@ -74,6 +74,13 @@ impl AccountsDb {
         let mut accounts =
             vec![(instruction.program_id, self.account_must(&instruction.program_id))];
         instruction.accounts.iter().for_each(|meta| {
+            if meta.pubkey == solana_sdk_ids::sysvar::instructions::id() {
+                // sysvar instructions needs to be handled specially
+                let account = SysvarInstructions::construct_instructions_account(instruction);
+                accounts.push((meta.pubkey, account));
+                return;
+            }
+
             let pubkey = meta.pubkey;
             // first, check local cache
             if let Some(account) = self.account_maybe(&pubkey) {

@@ -15,6 +15,10 @@ path = "tests/sysvar.rs"
 name = "create-account"
 path = "tests/create-account.rs"
 
+[[test]]
+name = "sysvar-ixns"
+path = "tests/sysvar-ixns.rs"
+
 [dependencies]
 agave-feature-set = { workspace = true }
 agave-precompiles = { workspace = true }
@@ -36,6 +40,7 @@ solana-epoch-rewards = { workspace = true }
 solana-epoch-schedule = { workspace = true }
 solana-hash = { workspace = true }
 solana-instruction = { workspace = true }
+solana-instructions-sysvar = { workspace = true }
 solana-logger = { workspace = true }
 solana-precompile-error.workspace = true
 solana-program-runtime.workspace = true
