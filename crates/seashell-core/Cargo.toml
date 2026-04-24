@@ -19,6 +19,10 @@ path = "tests/create-account.rs"
 name = "sysvar-ixns"
 path = "tests/sysvar-ixns.rs"
 
+[[test]]
+name = "process-instructions-sysvar"
+path = "tests/process_instructions_sysvar.rs"
+
 [dependencies]
 agave-feature-set = { workspace = true }
 agave-precompiles = { workspace = true }

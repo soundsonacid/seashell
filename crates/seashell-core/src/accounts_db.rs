@@ -31,7 +31,9 @@ pub struct AccountsDb {
 
 impl AccountsDb {
     pub fn clear_non_program_accounts(&self) {
-        self.accounts.write().retain(|_, account| account.executable());
+        self.accounts
+            .write()
+            .retain(|_, account| account.executable());
     }
 
     pub fn warp(&self, slot: u64, timestamp: i64) {
@@ -57,18 +59,34 @@ impl AccountsDb {
     }
 
     pub fn account_must(&self, pubkey: &Pubkey) -> AccountSharedData {
-        self.account_maybe(pubkey).unwrap_or_else(|| {
-            #[cfg(feature = "rpc-fetch")]
-            {
-                self.scenario
-                    .try_fetch_from_rpc(pubkey)
-                    .expect("Account not found")
+        self.resolve_account(pubkey, false)
+    }
+
+    /// Resolve a single account by pubkey following the standard lookup order:
+    /// local cache, then RPC fallback, then uninitialized-account fallback if
+    /// `allow_uninitialized_accounts` is set. Panics if none of the above succeed.
+    pub fn resolve_account(
+        &self,
+        pubkey: &Pubkey,
+        allow_uninitialized_accounts: bool,
+    ) -> AccountSharedData {
+        if let Some(account) = self.account_maybe(pubkey) {
+            return account;
+        }
+
+        #[cfg(feature = "rpc-fetch")]
+        if self.scenario.rpc_enabled() {
+            if let Some(account) = self.scenario.try_fetch_from_rpc(pubkey) {
+                return account;
             }
-            #[cfg(not(feature = "rpc-fetch"))]
-            {
-                panic!("Account not found for {pubkey}")
-            }
-        })
+        }
+
+        if allow_uninitialized_accounts {
+            log::debug!("Creating uninitialized account for {pubkey}");
+            return AccountSharedData::default();
+        }
+
+        panic!("Account not found for {pubkey}");
     }
 
     /// Panics if unable to find any account.
@@ -80,39 +98,18 @@ impl AccountsDb {
         // always insert the program_id of the instruction as the first account.
         let mut accounts =
             vec![(instruction.program_id, self.account_must(&instruction.program_id))];
-        instruction.accounts.iter().for_each(|meta| {
+        for meta in &instruction.accounts {
             if meta.pubkey == solana_sdk_ids::sysvar::instructions::id() {
                 // sysvar instructions needs to be handled specially
                 let account = SysvarInstructions::construct_instructions_account(instruction);
                 accounts.push((meta.pubkey, account));
-                return;
+                continue;
             }
-
-            let pubkey = meta.pubkey;
-            // first, check local cache
-            if let Some(account) = self.account_maybe(&pubkey) {
-                accounts.push((pubkey, account));
-                return;
-            }
-
-            // if account is not present in local cache, attempt to fetch from rpc
-            #[cfg(feature = "rpc-fetch")]
-            if self.scenario.rpc_enabled() {
-                if let Some(account) = self.scenario.try_fetch_from_rpc(&pubkey) {
-                    accounts.push((pubkey, account));
-                    return;
-                }
-            }
-
-            // finally, if still not found, handle according to allow_uninitialized_accounts
-            if allow_uninitialized_accounts {
-                log::debug!("Creating uninitialized account for {pubkey}");
-                accounts.push((pubkey, AccountSharedData::default()));
-                return;
-            }
-
-            panic!("Account not found for {pubkey}");
-        });
+            accounts.push((
+                meta.pubkey,
+                self.resolve_account(&meta.pubkey, allow_uninitialized_accounts),
+            ));
+        }
         accounts
     }
 

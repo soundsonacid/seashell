@@ -5,19 +5,65 @@ use solana_transaction_context::{IndexOfAccount, InstructionAccount};
 
 pub const INSTRUCTION_PROGRAM_ID_INDEX: u16 = 0;
 
-pub fn compile_accounts_for_instruction(ixn: &Instruction) -> Vec<InstructionAccount> {
-    let mut account_map: IndexMap<Pubkey, (bool, bool)> = IndexMap::new();
-    account_map.insert(ixn.program_id, (false, false));
-
-    for account in &ixn.accounts {
-        account_map
-            .entry(account.pubkey)
+fn merge_account_privileges(ixn: &Instruction) -> IndexMap<Pubkey, (bool, bool)> {
+    let mut privileges: IndexMap<Pubkey, (bool, bool)> = IndexMap::new();
+    for meta in &ixn.accounts {
+        privileges
+            .entry(meta.pubkey)
             .and_modify(|e| {
-                e.0 |= account.is_signer;
-                e.1 |= account.is_writable;
+                e.0 |= meta.is_signer;
+                e.1 |= meta.is_writable;
             })
-            .or_insert((account.is_signer, account.is_writable));
+            .or_insert((meta.is_signer, meta.is_writable));
     }
+    privileges
+}
+
+/// Deduplicated account keys across all instructions, preserving order of first appearance.
+pub fn compile_transaction_account_keys(ixns: &[Instruction]) -> Vec<Pubkey> {
+    let mut seen: IndexMap<Pubkey, ()> = IndexMap::new();
+    for ixn in ixns {
+        seen.entry(ixn.program_id).or_insert(());
+        for meta in &ixn.accounts {
+            seen.entry(meta.pubkey).or_insert(());
+        }
+    }
+    seen.keys().copied().collect()
+}
+
+/// Like [`compile_accounts_for_instruction`], but indices reference a shared transaction account list.
+pub fn compile_instruction_for_transaction(
+    ixn: &Instruction,
+    transaction_account_keys: &[Pubkey],
+) -> (IndexOfAccount, Vec<InstructionAccount>) {
+    let program_id_index = transaction_account_keys
+        .iter()
+        .position(|k| *k == ixn.program_id)
+        .expect("program_id must be present in transaction_account_keys")
+        as IndexOfAccount;
+
+    let account_privileges = merge_account_privileges(ixn);
+
+    let instruction_accounts = ixn
+        .accounts
+        .iter()
+        .map(|meta| {
+            let tx_index = transaction_account_keys
+                .iter()
+                .position(|k| *k == meta.pubkey)
+                .expect("account must be present in transaction_account_keys")
+                as IndexOfAccount;
+            let (is_signer, is_writable) = account_privileges.get(&meta.pubkey).unwrap();
+            InstructionAccount::new(tx_index, *is_signer, *is_writable)
+        })
+        .collect();
+
+    (program_id_index, instruction_accounts)
+}
+
+pub fn compile_accounts_for_instruction(ixn: &Instruction) -> Vec<InstructionAccount> {
+    let mut account_map = merge_account_privileges(ixn);
+    account_map.entry(ixn.program_id).or_insert((false, false));
 
     let mut transaction_accounts = vec![ixn.program_id];
     for account_meta in &ixn.accounts {
@@ -220,5 +266,73 @@ mod tests {
         assert!(result[2].is_writable());
         assert!(result[5].is_signer());
         assert!(result[5].is_writable());
+    }
+
+    #[test]
+    fn test_compile_transaction_account_keys() {
+        let program_a = Pubkey::new_unique();
+        let program_b = Pubkey::new_unique();
+        let account1 = Pubkey::new_unique();
+        let account2 = Pubkey::new_unique();
+        let shared = Pubkey::new_unique();
+
+        let ix1 = Instruction {
+            program_id: program_a,
+            accounts: vec![AccountMeta::new(account1, true), AccountMeta::new(shared, false)],
+            data: vec![],
+        };
+        let ix2 = Instruction {
+            program_id: program_b,
+            accounts: vec![AccountMeta::new(account2, true), AccountMeta::new(shared, false)],
+            data: vec![],
+        };
+
+        let keys = compile_transaction_account_keys(&[ix1, ix2]);
+        // Deduplicated, order of first appearance
+        assert_eq!(keys.len(), 5); // program_a, account1, shared, program_b, account2
+        assert_eq!(keys[0], program_a);
+        assert_eq!(keys[1], account1);
+        assert_eq!(keys[2], shared);
+        assert_eq!(keys[3], program_b);
+        assert_eq!(keys[4], account2);
+    }
+
+    #[test]
+    fn test_compile_instruction_for_transaction() {
+        let program_a = Pubkey::new_unique();
+        let program_b = Pubkey::new_unique();
+        let account1 = Pubkey::new_unique();
+        let shared = Pubkey::new_unique();
+
+        let ix1 = Instruction {
+            program_id: program_a,
+            accounts: vec![AccountMeta::new(account1, true), AccountMeta::new(shared, false)],
+            data: vec![],
+        };
+        let ix2 = Instruction {
+            program_id: program_b,
+            accounts: vec![AccountMeta::new(shared, true)],
+            data: vec![],
+        };
+
+        let keys = compile_transaction_account_keys(&[ix1.clone(), ix2.clone()]);
+        // keys: [program_a(0), account1(1), shared(2), program_b(3)]
+
+        let (pid_idx1, accs1) = compile_instruction_for_transaction(&ix1, &keys);
+        assert_eq!(pid_idx1, 0); // program_a is at index 0
+        assert_eq!(accs1.len(), 2);
+        assert_eq!(accs1[0].index_in_transaction, 1); // account1
+        assert!(accs1[0].is_signer());
+        assert!(accs1[0].is_writable());
+        assert_eq!(accs1[1].index_in_transaction, 2); // shared
+        assert!(!accs1[1].is_signer());
+        assert!(accs1[1].is_writable());
+
+        let (pid_idx2, accs2) = compile_instruction_for_transaction(&ix2, &keys);
+        assert_eq!(pid_idx2, 3); // program_b is at index 3
+        assert_eq!(accs2.len(), 1);
+        assert_eq!(accs2[0].index_in_transaction, 2); // shared
+        assert!(accs2[0].is_signer());
+        assert!(accs2[0].is_writable());
     }
 }
