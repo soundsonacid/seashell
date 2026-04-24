@@ -158,13 +158,15 @@ pub struct SysvarInstructions;
 
 impl SysvarInstructions {
     pub fn construct_instructions_account(instruction: &Instruction) -> AccountSharedData {
-        let borrowed_accounts = instruction.accounts.iter().map(|meta| {
-            BorrowedAccountMeta {
+        let borrowed_accounts = instruction
+            .accounts
+            .iter()
+            .map(|meta| BorrowedAccountMeta {
                 pubkey: &meta.pubkey,
                 is_signer: meta.is_signer,
                 is_writable: meta.is_writable,
-            }
-        }).collect::<Vec<_>>();
+            })
+            .collect::<Vec<_>>();
 
         let borrowed_instruction = BorrowedInstruction {
             program_id: &instruction.program_id,
@@ -172,7 +174,8 @@ impl SysvarInstructions {
             data: &instruction.data,
         };
 
-        let sysvar_instructions_data = solana_instructions_sysvar::construct_instructions_data(&[borrowed_instruction]);
+        let sysvar_instructions_data =
+            solana_instructions_sysvar::construct_instructions_data(&[borrowed_instruction]);
 
         AccountSharedData::from(Account {
             data: sysvar_instructions_data,

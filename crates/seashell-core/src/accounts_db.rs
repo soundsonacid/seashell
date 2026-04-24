@@ -31,7 +31,9 @@ pub struct AccountsDb {
 
 impl AccountsDb {
     pub fn clear_non_program_accounts(&self) {
-        self.accounts.write().retain(|_, account| account.executable());
+        self.accounts
+            .write()
+            .retain(|_, account| account.executable());
     }
 
     pub fn warp(&self, slot: u64, timestamp: i64) {
