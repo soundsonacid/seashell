@@ -1,7 +1,9 @@
 #!/bin/bash
+set -euo pipefail
 
 # Default values
 PROGRAM=""
+TOOLS_VERSION="v1.50"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -33,6 +35,29 @@ if [ ! -f "$MANIFEST_PATH" ]; then
     exit 1
 fi
 
-# Run the cargo build command
-echo "Building SBF program: $PROGRAM"
-cargo build-sbf --tools-version v1.50 --manifest-path "$MANIFEST_PATH" --features bpf-entrypoint
+PLATFORM_TOOLS="$HOME/.cache/solana/${TOOLS_VERSION}/platform-tools"
+if [ ! -d "$PLATFORM_TOOLS" ]; then
+    echo "Error: platform-tools ${TOOLS_VERSION} not found at $PLATFORM_TOOLS"
+    echo "Run 'cargo build-sbf --tools-version ${TOOLS_VERSION}' once to install it"
+    exit 1
+fi
+
+echo "Building SBF program: $PROGRAM (DWARF 5, unstripped)"
+RUSTC_BOOTSTRAP=1 \
+RUSTC="$PLATFORM_TOOLS/rust/bin/rustc" \
+RUSTFLAGS="-C debuginfo=2 -C strip=none -Z dwarf-version=5" \
+    "$PLATFORM_TOOLS/rust/bin/cargo" build \
+    --release \
+    --target sbpf-solana-solana \
+    --manifest-path "$MANIFEST_PATH" \
+    --features bpf-entrypoint
+
+SO_NAME="${PROGRAM//-/_}"
+TARGET_DIR="./programs/${PROGRAM}/target"
+BUILT_SO="$TARGET_DIR/sbpf-solana-solana/release/${SO_NAME}.so"
+DEPLOY_DIR="$TARGET_DIR/deploy"
+OBJCOPY="$PLATFORM_TOOLS/llvm/bin/llvm-objcopy"
+mkdir -p "$DEPLOY_DIR"
+"$OBJCOPY" --strip-all "$BUILT_SO" "$DEPLOY_DIR/${SO_NAME}.so"
+"$OBJCOPY" --only-keep-debug "$BUILT_SO" "$DEPLOY_DIR/${SO_NAME}.debug"
+echo "Wrote $DEPLOY_DIR/${SO_NAME}.so and $DEPLOY_DIR/${SO_NAME}.debug"

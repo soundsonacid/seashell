@@ -1,5 +1,6 @@
 use std::cell::RefCell;
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use agave_feature_set::FeatureSet;
@@ -11,6 +12,7 @@ use solana_instruction::Instruction;
 use solana_precompile_error::PrecompileError;
 use solana_program_runtime::invoke_context::{EnvironmentConfig, InvokeContext};
 use solana_pubkey::Pubkey;
+use solana_sbpf::profiler::CuProfiler;
 use solana_svm_callback::InvokeContextCallback;
 use solana_svm_log_collector::LogCollector;
 use solana_svm_timings::ExecuteTimings;
@@ -19,6 +21,7 @@ use solana_transaction_context::{IndexOfAccount, TransactionContext};
 use crate::accounts_db::AccountsDb;
 use crate::compile::{compile_accounts_for_instruction, INSTRUCTION_PROGRAM_ID_INDEX};
 use crate::error::SeashellError;
+use crate::symbolicate::{ProgramSymbolicators, Symbolicator};
 use crate::scenario::Scenario;
 
 pub struct Config {
@@ -45,6 +48,9 @@ pub struct Seashell {
     pub compute_budget: ComputeBudget,
     pub feature_set: FeatureSet,
     pub log_collector: Option<Rc<RefCell<LogCollector>>>,
+    pub symbolicators: HashMap<Pubkey, Symbolicator>,
+    pub program_names: HashMap<Pubkey, String>,
+    pub profiler: Option<CuProfiler>,
 }
 
 unsafe impl Send for Seashell {}
@@ -58,6 +64,9 @@ impl Default for Seashell {
             compute_budget: ComputeBudget::new_with_defaults(false),
             feature_set: FeatureSet::all_enabled(),
             log_collector: None,
+            symbolicators: HashMap::new(),
+            program_names: HashMap::new(),
+            profiler: None,
         }
     }
 }
@@ -103,11 +112,6 @@ impl Seashell {
         seashell.load_precompiles();
 
         seashell
-    }
-
-    /// Replaces the Tokenkeg binary with the P-Token binary.
-    pub fn use_p_token(&mut self) {
-        crate::spl::load_p_token(self);
     }
 
     pub fn new_with_config(config: Config) -> Self {
@@ -160,7 +164,7 @@ impl Seashell {
             workspace_root.join("target/deploy")
         };
 
-        let entries = std::fs::read_dir(program_so_directory)?;
+        let entries = std::fs::read_dir(&program_so_directory)?;
 
         for entry_maybe in entries {
             let entry = entry_maybe?;
@@ -172,7 +176,7 @@ impl Seashell {
                     .and_then(|s| s.to_str())
                     .is_some_and(|stem| stem == program_name)
             {
-                let program_bytes = std::fs::read(path)?;
+                let program_bytes = std::fs::read(&path)?;
                 self.accounts_db.load_program_from_bytes_with_loader(
                     program_id,
                     &program_bytes,
@@ -183,7 +187,50 @@ impl Seashell {
             }
         }
 
+        let mut symbolicator = Symbolicator::new();
+        match find_symbol_source(&program_so_directory, program_name) {
+            Some(source) => {
+                match std::fs::read(&source)
+                    .map_err(|e| e.to_string())
+                    .and_then(|bytes| symbolicator.load_elf_symbols(&bytes))
+                {
+                    Ok(n) => log::debug!(
+                        "symbolicator: loaded {n} function symbols for '{program_name}' from {}",
+                        source.display()
+                    ),
+                    Err(e) => log::debug!(
+                        "symbolicator: failed to read symbols for '{program_name}' from {} ({e}); \
+                         falling back to the stripped view (fn@pc)",
+                        source.display()
+                    ),
+                }
+            }
+            None => log::debug!(
+                "symbolicator: no symbol source (.debug / unstripped .so) found for \
+                 '{program_name}' near {}; function frames will show as fn@pc \
+                 (syscalls are still named)",
+                program_so_directory.display()
+            ),
+        }
+        self.symbolicators.insert(program_id, symbolicator);
+        self.program_names.insert(program_id, program_name.to_string());
+
         Ok(())
+    }
+
+    pub fn symbolicator(&self, program_id: &Pubkey) -> Option<&Symbolicator> {
+        self.symbolicators.get(program_id)
+    }
+
+    pub fn program_symbolicators<'a>(
+        &'a self,
+        fallback: &'a Symbolicator,
+    ) -> ProgramSymbolicators<'a> {
+        let mut syms = ProgramSymbolicators::new(fallback);
+        for (program_id, symbolicator) in &self.symbolicators {
+            syms.add(program_id.to_bytes(), symbolicator);
+        }
+        syms
     }
 
     /// Loads a scenario from a .json.gz file, or creates a new empty scenario if the file doesn't exist.
@@ -216,6 +263,59 @@ impl Seashell {
     }
 
     pub fn process_instruction(&self, ixn: Instruction) -> InstructionProcessingResult {
+        self.process_instruction_internal(ixn, None).0
+    }
+
+    pub fn profile_instruction(&mut self, ixn: Instruction) -> InstructionProcessingResult {
+        let profiler = self.profiler.take().unwrap_or_default();
+        let (result, profiler) = self.process_instruction_internal(ixn, Some(profiler));
+        self.profiler = profiler;
+        result
+    }
+
+    pub fn write_svg(&self) -> PathBuf {
+        let profiler = self
+            .profiler
+            .as_ref()
+            .expect("nothing profiled: call profile_instruction first");
+        let root_name = profiler
+            .root()
+            .and_then(|root| match profiler.nodes[root].key {
+                solana_sbpf::profiler::FrameKey::Program(id) => {
+                    let id = Pubkey::new_from_array(id);
+                    Some(
+                        self.program_names
+                            .get(&id)
+                            .cloned()
+                            .unwrap_or_else(|| id.to_string()),
+                    )
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| "profile".to_string());
+
+        let out_dir = try_find_workspace_root()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("target/flamegraphs");
+        std::fs::create_dir_all(&out_dir).expect("create target/flamegraphs");
+        let path = out_dir.join(format!("{root_name}.svg"));
+        let file = std::fs::File::create(&path).expect("create flamegraph file");
+        let fallback = Symbolicator::new();
+        self.program_symbolicators(&fallback)
+            .render_svg(profiler, &format!("{root_name} - CU flamegraph"), file)
+            .expect("render flamegraph");
+        path
+    }
+
+    pub fn clear_profiler(&mut self) {
+        self.profiler = None;
+    }
+
+    pub fn process_instruction_internal(
+        &self,
+        ixn: Instruction,
+        profiler: Option<CuProfiler>,
+    ) -> (InstructionProcessingResult, Option<CuProfiler>) {
         let transaction_accounts = self
             .accounts_db
             .accounts_for_instruction(self.config.allow_uninitialized_accounts_local, &ixn);
@@ -254,20 +354,32 @@ impl Seashell {
         let epoch_stake_callback = SeashellInvokeContextCallback { feature_set: &self.feature_set };
         let runtime_features = self.feature_set.runtime_features();
         let mut programs = self.accounts_db.programs.clone();
-        let mut invoke_context = InvokeContext::new(
-            &mut transaction_context,
-            &mut programs,
-            EnvironmentConfig::new(
-                Hash::default(),
-                /* blockhash_lamports_per_signature */ 5000, // The default value
-                &epoch_stake_callback,
-                &runtime_features,
-                &sysvar_cache,
-            ),
-            self.log_collector.clone(),
-            self.compute_budget.to_budget(),
-            self.compute_budget.to_cost(),
+        let environment_config = EnvironmentConfig::new(
+            Hash::default(),
+            /* blockhash_lamports_per_signature */ 5000,
+            &epoch_stake_callback,
+            &runtime_features,
+            &sysvar_cache,
         );
+        let mut invoke_context = match profiler {
+            Some(profiler) => InvokeContext::new_with_profiler(
+                &mut transaction_context,
+                &mut programs,
+                environment_config,
+                self.log_collector.clone(),
+                self.compute_budget.to_budget(),
+                self.compute_budget.to_cost(),
+                profiler,
+            ),
+            None => InvokeContext::new(
+                &mut transaction_context,
+                &mut programs,
+                environment_config,
+                self.log_collector.clone(),
+                self.compute_budget.to_budget(),
+                self.compute_budget.to_cost(),
+            ),
+        };
 
         let mut compute_units_consumed = 0;
 
@@ -282,8 +394,10 @@ impl Seashell {
                 .process_instruction(&mut compute_units_consumed, &mut ExecuteTimings::default())
         };
 
+        let profiler = invoke_context.cu_profiler.take();
+
         let return_data = transaction_context.get_return_data().1.to_owned();
-        match result {
+        let processing_result = match result {
             Ok(_) => {
                 let post_execution_accounts: Vec<(Pubkey, Account)> = transaction_accounts
                     .iter()
@@ -324,7 +438,9 @@ impl Seashell {
                     post_execution_accounts: Vec::default(),
                 }
             }
-        }
+        };
+
+        (processing_result, profiler)
     }
 
     pub fn airdrop(&mut self, pubkey: Pubkey, amount: u64) {
@@ -372,6 +488,27 @@ pub struct InstructionProcessingResult {
 pub enum InstructionProcessingError {
     InstructionError(InstructionError),
     ProgramError,
+}
+
+pub fn find_symbol_source(program_so_directory: &Path, program_name: &str) -> Option<PathBuf> {
+    let debug = program_so_directory.join(format!("{program_name}.debug"));
+    if debug.is_file() {
+        return Some(debug);
+    }
+
+    let file = format!("{program_name}.so");
+    let parent = program_so_directory.parent()?;
+    let mut candidates = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(parent) {
+        for entry in entries.flatten() {
+            let dir = entry.path();
+            if dir.is_dir() && dir.file_name().is_some_and(|n| n != "release") {
+                candidates.push(dir.join("release").join(&file));
+            }
+        }
+    }
+    candidates.push(parent.join("release").join(&file));
+    candidates.into_iter().find(|p| p.is_file())
 }
 
 pub fn try_find_workspace_root() -> Option<PathBuf> {
@@ -531,7 +668,7 @@ mod tests {
         let result = seashell.process_instruction(ixn);
 
         assert!(result.error.is_none(), "Expected no error, got: {:?}", result.error);
-        assert_eq!(result.compute_units_consumed, 4644);
+        assert_eq!(result.compute_units_consumed, 76);
 
         let post_from = result
             .post_execution_accounts
@@ -689,9 +826,9 @@ mod tests {
             .join("crates/seashell-core/src/spl/elfs");
         unsafe { std::env::set_var("SBF_OUT_DIR", spl_elfs_out_dir.to_str().unwrap()) }
 
-        let tokenkeg = Pubkey::new_unique();
+        let ptoken = Pubkey::new_unique();
         seashell
-            .load_program_from_environment("tokenkeg", tokenkeg)
+            .load_program_from_environment("ptoken", ptoken)
             .unwrap();
 
         let token22 = Pubkey::new_unique();
@@ -705,7 +842,7 @@ mod tests {
             .unwrap();
 
         let reader = seashell.accounts_db.accounts.read();
-        assert!(reader.contains_key(&tokenkeg));
+        assert!(reader.contains_key(&ptoken));
         assert!(reader.contains_key(&token22));
         assert!(reader.contains_key(&associated_token));
     }
@@ -801,73 +938,6 @@ mod tests {
 
         let missing_pubkey = Pubkey::from_str_const("NoShot1111111111111111111111111111111111111");
         seashell.account(&missing_pubkey);
-    }
-
-    #[test]
-    fn test_spl_transfer_p_token() {
-        crate::set_log();
-        let mut seashell = Seashell::new();
-        seashell.use_p_token();
-        let from: Pubkey = solana_pubkey::Pubkey::new_unique();
-        let to = solana_pubkey::Pubkey::new_unique();
-        let from_authority = solana_pubkey::Pubkey::new_unique();
-        let mint = solana_pubkey::Pubkey::new_unique();
-
-        create_mint_account(&mut seashell, mint, 1000);
-        create_token_account(&mut seashell, from, mint, from_authority, 1000);
-        create_token_account(&mut seashell, to, mint, Pubkey::new_unique(), 0);
-        seashell.airdrop(from_authority, 1000);
-
-        let mut data = [0; 9];
-        data[0] = 3;
-        data[1..9].copy_from_slice(&500u64.to_le_bytes());
-
-        let ixn = Instruction {
-            program_id: crate::spl::TOKEN_PROGRAM_ID,
-            accounts: vec![
-                AccountMeta::new(from, true),
-                AccountMeta::new(to, false),
-                AccountMeta::new_readonly(from_authority, true),
-            ],
-            data: data.to_vec(),
-        };
-
-        let result = seashell.process_instruction(ixn);
-
-        assert!(result.error.is_none(), "Expected no error, got: {:?}", result.error);
-        assert_eq!(result.compute_units_consumed, 82);
-
-        let post_from = result
-            .post_execution_accounts
-            .iter()
-            .find(|(pubkey, _)| *pubkey == from)
-            .expect("Resulting account should exist")
-            .to_owned()
-            .1;
-        let post_from_balance = u64::from_le_bytes(post_from.data[64..72].try_into().unwrap());
-        assert_eq!(
-            post_from_balance, 500,
-            "Expected from token account to have 500 tokens after transfer"
-        );
-
-        let post_to = result
-            .post_execution_accounts
-            .iter()
-            .find(|(pubkey, _)| *pubkey == to)
-            .expect("Resulting account should exist")
-            .to_owned()
-            .1;
-        let post_to_balance = u64::from_le_bytes(post_to.data[64..72].try_into().unwrap());
-        assert_eq!(
-            post_to_balance, 500,
-            "Expected to token account to have 500 tokens after transfer"
-        );
-
-        assert!(
-            result.return_data.is_empty(),
-            "Expected no return data, got: {:?}",
-            result.return_data
-        );
     }
 
 }

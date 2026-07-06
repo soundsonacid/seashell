@@ -76,11 +76,11 @@ fn test_account_loader_duplicate_accounts() {
     seashell.set_account(duplicate, Account::default());
     seashell.set_account(duplicate_2, Account::default());
     let account_metas: [AccountMeta; 10] = std::array::from_fn(|pos| {
-        if pos.is_multiple_of(5) {
+        if pos % 5 == 0 {
             println!("{pos}: adding dup {duplicate}");
             pubkey_order.push(duplicate);
             AccountMeta::new_readonly(duplicate, false)
-        } else if pos.is_multiple_of(2) {
+        } else if pos % 2 == 0 {
             println!("{pos}: adding dup2 {duplicate_2}");
             pubkey_order.push(duplicate_2);
             AccountMeta::new_readonly(duplicate_2, false)
