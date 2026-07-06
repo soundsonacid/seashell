@@ -14,7 +14,7 @@ in order to use the profiler you must build your program unstripped, with debug 
 RUSTFLAGS="-C debuginfo=2 -C strip=none" cargo build-sbf --tools-version v1.54 --debug
 ```
 
-**platform-tools <= v1.51** the sbpf lld corrupts dwarf <=4 in debug sections, so you must also force dwarf 5 via `-Z dwarf-version=5` and since `cargo build-sbf` sanitizes `RUSTC_BOOTSTRAP` out of the environment, the `-Z` flag cannot reach rustc through it. use `scripts/build-sbf.sh --program <name>`, which drives the platform-tools cargo directly:
+**platform-tools <= v1.51**
 
 ```bash
 PT=~/.cache/solana/v1.50/platform-tools
@@ -22,14 +22,6 @@ RUSTC_BOOTSTRAP=1 RUSTC=$PT/rust/bin/rustc \
 RUSTFLAGS="-C debuginfo=2 -C strip=none -Z dwarf-version=5" \
     $PT/rust/bin/cargo build --release --target sbpf-solana-solana
 ```
-
-on the old toolchains doing this wrong means the generated `.debug` binary will contain
-1. no dwarf info (if you left out `strip=none` because `-g` does not work)
-2. corrupt dwarf info (if you left out `dwarf-version=5`)
-
-the corruption is a linker bug fixed in 1.52. the old sbpf lld applies `R_BPF_64_64` relocations to debug sections as if they were `lddw` instruction slots (lo32 written at slot+4, hi32 at slot+12), which zeroes the 4 bytes after every relocated address slot and desyncs dwarf <=4 `.debug_info` beyond repair. dwarf 5 moves addresses into `.debug_addr`.
-
-once you have done this then you can use `profile_instruction` in place of `process_instruction` like so
 
 with process instruction:
 ```rust
