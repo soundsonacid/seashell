@@ -1,0 +1,14 @@
+[package]
+name = "sbpf-v3"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+bpf-entrypoint = []
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "sbpf_v3"
+
+[dependencies]
+pinocchio = "0.9.0"

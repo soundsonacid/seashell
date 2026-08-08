@@ -1,0 +1,14 @@
+[package]
+name = "token-transfer"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+bpf-entrypoint = []
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "token_transfer"
+
+[dependencies]
+pinocchio = "0.9.0"

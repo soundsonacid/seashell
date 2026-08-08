@@ -1,0 +1,12 @@
+[package]
+name = "anchor-transfer"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "anchor_transfer"
+
+[dependencies]
+anchor-lang = "0.31.1"
+anchor-spl = "0.31.1"

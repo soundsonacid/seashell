@@ -11,12 +11,14 @@ use solana_instruction::error::InstructionError;
 use solana_instruction::Instruction;
 use solana_precompile_error::PrecompileError;
 use solana_program_runtime::invoke_context::{EnvironmentConfig, InvokeContext};
+use solana_program_runtime::loaded_programs::ProgramRuntimeEnvironments;
 use solana_pubkey::Pubkey;
 use solana_sbpf::profiler::CuProfiler;
 use solana_svm_callback::InvokeContextCallback;
 use solana_svm_log_collector::LogCollector;
 use solana_svm_timings::ExecuteTimings;
-use solana_transaction_context::{IndexOfAccount, TransactionContext};
+use solana_transaction_context::transaction::TransactionContext;
+use solana_transaction_context::IndexOfAccount;
 
 use crate::accounts_db::AccountsDb;
 use crate::compile::{compile_accounts_for_instruction, INSTRUCTION_PROGRAM_ID_INDEX};
@@ -328,37 +330,35 @@ impl Seashell {
             self.accounts_db.sysvars.rent(),
             self.compute_budget.max_instruction_stack_depth,
             self.compute_budget.max_instruction_trace_length,
+            1,
         );
 
         let instruction_accounts = compile_accounts_for_instruction(&ixn);
 
-        let mut dedup_map = vec![u8::MAX; solana_transaction_context::MAX_ACCOUNTS_PER_TRANSACTION];
-        for (idx, account) in instruction_accounts.iter().enumerate() {
-            let index_in_instruction = dedup_map
-                .get_mut(account.index_in_transaction as usize)
-                .unwrap();
-            if *index_in_instruction == u8::MAX {
-                *index_in_instruction = idx as u8;
-            }
-        }
-
         transaction_context
-            .configure_next_instruction(
+            .configure_top_level_instruction_for_tests(
                 INSTRUCTION_PROGRAM_ID_INDEX as IndexOfAccount,
                 instruction_accounts,
-                dedup_map,
-                &ixn.data,
+                ixn.data.clone(),
             )
             .expect("Failed to configure instruction");
 
         let epoch_stake_callback = SeashellInvokeContextCallback { feature_set: &self.feature_set };
         let runtime_features = self.feature_set.runtime_features();
         let mut programs = self.accounts_db.programs.clone();
+        programs.set_slot_for_tests(self.accounts_db.sysvars.clock().slot.saturating_add(1));
+        let program_runtime_environment = solana_syscalls::create_program_runtime_environment(&runtime_features, &self.compute_budget.to_budget(), false, false).expect("failed to create program runtime environment");
+        let program_runtime_environments = ProgramRuntimeEnvironments::new(
+            program_runtime_environment.clone(),
+            program_runtime_environment,
+        );
         let environment_config = EnvironmentConfig::new(
             Hash::default(),
             /* blockhash_lamports_per_signature */ 5000,
+            false,
             &epoch_stake_callback,
             &runtime_features,
+            &program_runtime_environments,
             &sysvar_cache,
         );
         let mut invoke_context = match profiler {
@@ -406,18 +406,24 @@ impl Seashell {
                             .find_index_of_account(pubkey)
                             .map(|idx| {
                                 let accounts = transaction_context.accounts();
-                                let account = accounts
+                                let view = accounts
                                     .try_borrow(idx)
-                                    .expect("Failed to borrow TransactionAccounts")
-                                    .clone();
+                                    .expect("Failed to borrow TransactionAccounts");
+                                let account = Account {
+                                    lamports: view.lamports(),
+                                    data: view.data().to_vec(),
+                                    owner: *view.owner(),
+                                    executable: view.executable(),
+                                    rent_epoch: view.rent_epoch(),
+                                };
                                 if self.config.memoize {
                                     self.set_account_from_account_shared_data(
                                         *pubkey,
-                                        account.clone(),
+                                        AccountSharedData::from(account.clone()),
                                     );
                                 }
 
-                                (*pubkey, account.into())
+                                (*pubkey, account)
                             })
                             .unwrap_or((*pubkey, account_shared_data.to_owned().into()))
                     })

@@ -172,7 +172,7 @@ impl SysvarInstructions {
             data: &instruction.data,
         };
 
-        let sysvar_instructions_data = solana_instructions_sysvar::construct_instructions_data(&[borrowed_instruction]);
+        let sysvar_instructions_data = solana_instructions_sysvar::construct_instructions_data(&[borrowed_instruction]).expect("failed to construct instructions data");
 
         AccountSharedData::from(Account {
             data: sysvar_instructions_data,

@@ -109,7 +109,7 @@ fn profile_create_account_variants() {
         let svg = std::fs::File::create(&svg_path).unwrap();
         sym.render_svg(
             &profiler,
-            &format!("{} create account - CU flamegraph", v.dir),
+            &format!("{} create account - CU flamegraph (seashell)", v.dir),
             svg,
         )
         .expect("render flamegraph");

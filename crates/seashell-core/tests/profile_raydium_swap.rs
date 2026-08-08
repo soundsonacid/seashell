@@ -191,7 +191,7 @@ fn profile_raydium_swap_via_cpi() {
     let svg = std::fs::File::create(out_dir.join("raydium_swap.svg")).unwrap();
     syms.render_svg(
         &profiler,
-        "raydium cpmm swap_base_input via CPI - CU flamegraph",
+        "raydium cpmm swap_base_input via CPI - CU flamegraph (seashell)",
         svg,
     )
     .expect("render flamegraph");

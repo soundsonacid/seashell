@@ -8,13 +8,13 @@ the seashell programs in spl/elfs ship with full dwarf symbols by default in the
 
 in order to use the profiler you must build your program unstripped, with debug info. what that takes depends on your platform-tools version:
 
-**platform-tools >= v1.52** (rustc 1.89):
+**platform-tools >= v1.51**:
 
 ```bash
 RUSTFLAGS="-C debuginfo=2 -C strip=none" cargo build-sbf --tools-version v1.54 --debug
 ```
 
-**platform-tools <= v1.51**
+**platform-tools <= v1.50**
 
 ```bash
 PT=~/.cache/solana/v1.50/platform-tools
@@ -22,6 +22,14 @@ RUSTC_BOOTSTRAP=1 RUSTC=$PT/rust/bin/rustc \
 RUSTFLAGS="-C debuginfo=2 -C strip=none -Z dwarf-version=5" \
     $PT/rust/bin/cargo build --release --target sbpf-solana-solana
 ```
+
+### why those flags (sources)
+
+- release builds generate no debug info by default (`debug = false`): [cargo book — profiles](https://doc.rust-lang.org/cargo/reference/profiles.html#release). hence `-C debuginfo=2` (or `cargo build-sbf --debug`, which appends `-g`: [cargo-build-sbf main.rs](https://github.com/anza-xyz/agave/blob/v3.0.10/platform-tools-sdk/cargo-build-sbf/src/main.rs#L202-L205))
+- even with debug info generated, cargo passes `-C strip=debuginfo` for release profiles by default since rust 1.77, dropping the DWARF at link while keeping `.symtab`: [rust 1.77 announcement](https://blog.rust-lang.org/2024/03/21/Rust-1.77.0.html), [cargo book — strip](https://doc.rust-lang.org/cargo/reference/profiles.html#strip), [rustc `-C strip` semantics](https://doc.rust-lang.org/rustc/codegen-options/index.html#strip). `-C strip=none` in `RUSTFLAGS` wins because rustflags are appended after cargo's profile flags. verify: `cargo build -v` shows `-C strip=debuginfo` in the rustc invocation without the override
+- the deploy `.so` is fully stripped — no `.symtab`, no DWARF: `cargo-build-sbf` post-processing runs `llvm-objcopy --strip-all` ([post_processing.rs](https://github.com/anza-xyz/agave/blob/v3.0.10/platform-tools-sdk/cargo-build-sbf/src/post_processing.rs#L70-L90) via [strip.sh](https://github.com/anza-xyz/agave/blob/v3.0.10/platform-tools-sdk/sbf/scripts/strip.sh); [`--strip-all` removes both](https://llvm.org/docs/CommandGuide/llvm-objcopy.html))
+- the `.debug` companion is `llvm-objcopy --only-keep-debug` of the unstripped binary, emitted by `--debug`: [post_processing.rs](https://github.com/anza-xyz/agave/blob/v3.0.10/platform-tools-sdk/cargo-build-sbf/src/post_processing.rs#L122-L137)
+- `-Z dwarf-version=5` on <= v1.50: the old sbpf lld applies `R_BPF_64_64` relocations to debug sections as if they were `lddw` instruction slots, corrupting dwarf <= 4 `.debug_info`; dwarf 5 keeps addresses in `.debug_addr` where the damage is recoverable. fixed in v1.51 — same rustc 1.84.1, only the linker changed ([anza-xyz/platform-tools releases](https://github.com/anza-xyz/platform-tools/releases)); provable byte-for-byte with the dwarf-demo in the profile-example repo
 
 with process instruction:
 ```rust

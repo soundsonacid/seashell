@@ -1,6 +1,2 @@
-# Pinned to match the vendored agave fork (../agave @ v3.0.10), which pins 1.86.0.
-# rust-toolchain.toml only applies at the invocation (workspace) root, so agave's
-# own pin is ignored when its crates are built as path deps from here — we must
-# mirror it or newer-toolchain lints turn into hard errors (agave denies warnings).
 [toolchain]
-channel = "1.86.0"
+channel = "1.97.1"

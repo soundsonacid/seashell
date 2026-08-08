@@ -23,7 +23,7 @@ path = "tests/sysvar-ixns.rs"
 addr2line = { workspace = true }
 agave-feature-set = { workspace = true }
 agave-precompiles = { workspace = true }
-agave-syscalls = { workspace = true }
+solana-syscalls = { workspace = true }
 bincode = { workspace = true }
 flate2 = { workspace = true }
 gimli = { workspace = true }
@@ -68,6 +68,7 @@ thiserror = { workspace = true }
 [dev-dependencies]
 ed25519-dalek = { workspace = true }
 libsecp256k1 = { workspace = true }
+quasar-profile = { workspace = true }
 openssl = { workspace = true }
 rand = { workspace = true }
 solana-ed25519-program = { workspace = true }
