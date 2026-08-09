@@ -17,12 +17,12 @@ path = "tests/create-account.rs"
 
 [[test]]
 name = "sysvar-ixns"
-path = "tests/sysvar-ixns.rs"
+path = "tests/sysvar_ixns.rs"
 
 [dependencies]
 agave-feature-set = { workspace = true }
 agave-precompiles = { workspace = true }
-agave-syscalls = { workspace = true }
+solana-syscalls = { workspace = true }
 bincode = { workspace = true }
 flate2 = { workspace = true }
 indexmap = { workspace = true }
