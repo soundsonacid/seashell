@@ -1,7 +1,8 @@
 use indexmap::IndexMap;
 use solana_instruction::Instruction;
 use solana_pubkey::Pubkey;
-use solana_transaction_context::{IndexOfAccount, InstructionAccount};
+use solana_transaction_context::instruction_accounts::InstructionAccount;
+use solana_transaction_context::IndexOfAccount;
 
 pub const INSTRUCTION_PROGRAM_ID_INDEX: u16 = 0;
 

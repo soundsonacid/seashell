@@ -16,9 +16,8 @@ fn test_sysvar_ixns() {
 
     seashell.enable_log_collector();
 
-    let accounts = vec![
-        AccountMeta::new_readonly(solana_sdk_ids::sysvar::instructions::id(), false),
-    ];
+    let accounts =
+        vec![AccountMeta::new_readonly(solana_sdk_ids::sysvar::instructions::id(), false)];
 
     let ixn = Instruction { program_id, accounts, data: Vec::new() };
 
