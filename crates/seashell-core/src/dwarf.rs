@@ -5,7 +5,21 @@ use object::{Object, ObjectSection};
 
 type DwarfReader = gimli::EndianReader<gimli::RunTimeEndian, Arc<[u8]>>;
 
-fn unmangle_addr(x: u64) -> u64 {
+/// Fold a mangled DWARF address back into the text address space.
+///
+/// Below SBPFv3 every `.text` address fits in 32 bits, so the fold is a no-op
+/// for real addresses and only rewrites the mangled ones. SBPFv3 moves `.text`
+/// to MM_BYTECODE_START (0x1_0000_0000), where the fold corrupts EVERY address
+/// — `0x1_0000_4600` becomes `0x4601` — and `build_dwarf_index` then discards
+/// the DIE, and its whole subtree, as dead code. That silently strips the
+/// inline frames out of a v3 profile: same pcs, same call tree, ~5x fewer
+/// folded stacks.
+///
+/// An address already inside the text range is not mangled. Leave it alone.
+fn unmangle_addr(x: u64, text_base: u64) -> u64 {
+    if x >= text_base {
+        return x;
+    }
     (x >> 32).wrapping_add(x & 0xFFFF_FFFF)
 }
 
@@ -36,12 +50,14 @@ fn attr_addr(
     dwarf: &gimli::Dwarf<DwarfReader>,
     unit: &gimli::Unit<DwarfReader>,
     value: gimli::AttributeValue<DwarfReader>,
+    text_base: u64,
 ) -> Option<u64> {
     match value {
-        gimli::AttributeValue::Addr(a) => Some(unmangle_addr(a)),
-        gimli::AttributeValue::DebugAddrIndex(i) => {
-            dwarf.address(unit, i).ok().map(unmangle_addr)
-        }
+        gimli::AttributeValue::Addr(a) => Some(unmangle_addr(a, text_base)),
+        gimli::AttributeValue::DebugAddrIndex(i) => dwarf
+            .address(unit, i)
+            .ok()
+            .map(|a| unmangle_addr(a, text_base)),
         _ => None,
     }
 }
@@ -51,17 +67,18 @@ fn die_ranges_of(
     unit: &gimli::Unit<DwarfReader>,
     debug_ranges: &[u8],
     entry: &gimli::DebuggingInformationEntry<DwarfReader>,
+    text_base: u64,
 ) -> Vec<(u64, u64)> {
     if let Some(low) = entry
         .attr_value(gimli::DW_AT_low_pc)
         .ok()
         .flatten()
-        .and_then(|v| attr_addr(dwarf, unit, v))
+        .and_then(|v| attr_addr(dwarf, unit, v, text_base))
     {
         if let Ok(Some(hv)) = entry.attr_value(gimli::DW_AT_high_pc) {
             let high = match hv {
                 gimli::AttributeValue::Udata(n) => Some(low.wrapping_add(n)),
-                other => attr_addr(dwarf, unit, other),
+                other => attr_addr(dwarf, unit, other, text_base),
             };
             return match high {
                 Some(high) if high > low => vec![(low, high)],
@@ -79,7 +96,7 @@ fn die_ranges_of(
                     return Vec::new();
                 }
             };
-            return parse_debug_ranges(debug_ranges, offset);
+            return parse_debug_ranges(debug_ranges, offset, text_base);
         }
         let offset = match dwarf.attr_ranges_offset(unit, v) {
             Ok(Some(offset)) => offset,
@@ -94,7 +111,10 @@ fn die_ranges_of(
             Ok(mut iter) => loop {
                 match iter.next() {
                     Ok(Some(r)) => {
-                        let (low, high) = (unmangle_addr(r.begin), unmangle_addr(r.end));
+                        let (low, high) = (
+                            unmangle_addr(r.begin, text_base),
+                            unmangle_addr(r.end, text_base),
+                        );
                         if high > low {
                             out.push((low, high));
                         }
@@ -113,7 +133,7 @@ fn die_ranges_of(
     Vec::new()
 }
 
-fn parse_debug_ranges(section: &[u8], offset: usize) -> Vec<(u64, u64)> {
+fn parse_debug_ranges(section: &[u8], offset: usize, text_base: u64) -> Vec<(u64, u64)> {
     let mut out = Vec::new();
     let mut base = 0u64;
     let mut pos = offset;
@@ -125,11 +145,11 @@ fn parse_debug_ranges(section: &[u8], offset: usize) -> Vec<(u64, u64)> {
             break;
         }
         if a == u64::MAX {
-            base = unmangle_addr(b);
+            base = unmangle_addr(b, text_base);
             continue;
         }
-        let low = base.wrapping_add(unmangle_addr(a));
-        let high = base.wrapping_add(unmangle_addr(b));
+        let low = base.wrapping_add(unmangle_addr(a, text_base));
+        let high = base.wrapping_add(unmangle_addr(b, text_base));
         if high > low {
             out.push((low, high));
         }
@@ -228,7 +248,7 @@ pub(crate) fn build_dwarf_index(elf_bytes: &[u8], text_base: u64) -> Option<Dwar
             let frame_depth = frame_stack.len();
             frame_stack.push(depth);
             n_dies += 1;
-            let ranges = die_ranges_of(&dwarf, &unit, &debug_ranges, entry);
+            let ranges = die_ranges_of(&dwarf, &unit, &debug_ranges, entry, text_base);
             if ranges.is_empty() {
                 continue;
             }
