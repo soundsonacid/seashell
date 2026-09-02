@@ -1,7 +1,7 @@
 [workspace]
 
 [package]
-name = "sysvar_ixns"
+name = "custom-sysvar"
 version = "0.1.0"
 edition = "2021"
 
@@ -13,4 +13,3 @@ crate-type = ["cdylib", "lib"]
 
 [dependencies]
 pinocchio = "0.9.0"
-pinocchio-log = "0.5.0"

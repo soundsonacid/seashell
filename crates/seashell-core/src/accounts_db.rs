@@ -124,6 +124,7 @@ impl AccountsDb {
                 set_sysvar(&data);
             }
         });
+        self.sysvars.populate_custom_sysvars(&mut sysvar_cache);
 
         sysvar_cache
     }

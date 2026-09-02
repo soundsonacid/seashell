@@ -17,6 +17,7 @@ use solana_sbpf::profiler::CuProfiler;
 use solana_svm_callback::InvokeContextCallback;
 use solana_svm_log_collector::LogCollector;
 use solana_svm_timings::ExecuteTimings;
+use solana_sysvar::SysvarSerialize;
 use solana_transaction_context::transaction::TransactionContext;
 use solana_transaction_context::IndexOfAccount;
 
@@ -120,6 +121,16 @@ impl Seashell {
         let mut seashell = Seashell::new();
         seashell.config = config;
         seashell
+    }
+
+    pub fn register_custom_sysvar<T: SysvarSerialize>(&self, sysvar: &T) {
+        self.accounts_db.sysvars.register_custom_sysvar(sysvar);
+    }
+
+    pub fn deregister_custom_sysvar(&self, sysvar_id: &Pubkey) -> Option<Vec<u8>> {
+        self.accounts_db
+            .sysvars
+            .deregister_custom_sysvar(sysvar_id)
     }
 
     pub fn enable_log_collector(&mut self) {

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use parking_lot::RwLock;
 use solana_account::{Account, AccountSharedData, ReadableAccount};
 use solana_clock::Clock;
@@ -5,11 +7,12 @@ use solana_epoch_rewards::EpochRewards;
 use solana_epoch_schedule::EpochSchedule;
 use solana_hash::Hash;
 use solana_instruction::{BorrowedAccountMeta, BorrowedInstruction, Instruction};
+use solana_program_runtime::sysvar_cache::SysvarCache;
 use solana_pubkey::Pubkey;
 use solana_rent::Rent;
 use solana_slot_hashes::{SlotHashes, MAX_ENTRIES};
 use solana_stake_interface::stake_history::{StakeHistory, StakeHistoryEntry};
-use solana_sysvar::last_restart_slot::LastRestartSlot;
+use solana_sysvar::{last_restart_slot::LastRestartSlot, SysvarSerialize};
 use solana_sysvar_id::{SysvarId, ID as SYSVAR};
 
 pub struct Sysvars {
@@ -20,6 +23,7 @@ pub struct Sysvars {
     slot_hashes: RwLock<SlotHashes>,
     stake_history: RwLock<StakeHistory>,
     last_restart_slot: RwLock<LastRestartSlot>,
+    pub custom_sysvars: RwLock<HashMap<Pubkey, Vec<u8>>>,
 }
 
 impl Default for Sysvars {
@@ -47,11 +51,27 @@ impl Default for Sysvars {
             rent: RwLock::new(rent),
             slot_hashes: RwLock::new(slot_hashes),
             stake_history: RwLock::new(stake_history),
+            custom_sysvars: RwLock::default(),
         }
     }
 }
 
 impl Sysvars {
+    pub fn register_custom_sysvar<T: SysvarSerialize>(&self, sysvar: &T) {
+        let data = bincode::serialize(sysvar).expect("Failed to serialize custom sysvar");
+        self.custom_sysvars.write().insert(T::id(), data);
+    }
+
+    pub fn deregister_custom_sysvar(&self, sysvar_id: &Pubkey) -> Option<Vec<u8>> {
+        self.custom_sysvars.write().remove(sysvar_id)
+    }
+
+    pub fn populate_custom_sysvars(&self, sysvar_cache: &mut SysvarCache) {
+        for (sysvar_id, data) in self.custom_sysvars.read().iter() {
+            sysvar_cache.register_custom_sysvar_data(*sysvar_id, data.clone());
+        }
+    }
+
     pub fn clock(&self) -> Clock {
         self.clock.read().clone()
     }
