@@ -12,6 +12,10 @@ pub const PATTERN_SOL_MATH: u8 = 1;
 pub const PATTERN_BPF_MUL128_SHR: u8 = 2;
 /// BPF loop: `out[i] = a[i] + (((b[i] - a[i]) as u128 * c[i] as u128) >> 52) as u64`.
 pub const PATTERN_BPF_LERP52: u8 = 3;
+/// BPF loop: `out[i] = a[i] + b[i]`, the cheapest loop there is.
+pub const PATTERN_BPF_ADD: u8 = 4;
+/// BPF loop: `out[i] = ((a[i] as u128 * b[i] as u128) / c[0] as u128) as u64`.
+pub const PATTERN_BPF_MUL_DIV: u8 = 5;
 
 pub const OP_WORD_OFFSET: usize = 8;
 pub const LANE_COUNT_OFFSET: usize = 16;
@@ -27,8 +31,6 @@ mod entrypoint {
     use pinocchio::ProgramResult;
     use solana_define_syscall::define_syscall;
 
-    // sbpf v3 has no relocations: the syscall is a `syscall <murmur3(name)>` instruction,
-    // which is what this macro emits (a const hash transmuted to a fn pointer).
     define_syscall!(fn sol_math(op_word: u64, lane_count: u64, inputs: *const *const u8, output: *mut u8) -> u64);
 
     entrypoint!(process_instruction);
@@ -81,6 +83,21 @@ mod entrypoint {
                     let (low, high, fraction) = (read_u64(a, lane), read_u64(b, lane), read_u64(c, lane));
                     let delta = high.wrapping_sub(low) as u128 * fraction as u128;
                     write_u64(out, lane, low.wrapping_add((delta >> 52) as u64));
+                }
+            }
+            PATTERN_BPF_ADD => {
+                for lane in 0..lane_count as usize {
+                    write_u64(out, lane, read_u64(a, lane).wrapping_add(read_u64(b, lane)));
+                }
+            }
+            PATTERN_BPF_MUL_DIV => {
+                let divisor = read_u64(c, 0) as u128;
+                if divisor == 0 {
+                    return Err(ProgramError::InvalidArgument);
+                }
+                for lane in 0..lane_count as usize {
+                    let quotient = read_u64(a, lane) as u128 * read_u64(b, lane) as u128 / divisor;
+                    write_u64(out, lane, quotient as u64);
                 }
             }
             _ => return Err(ProgramError::InvalidInstructionData),

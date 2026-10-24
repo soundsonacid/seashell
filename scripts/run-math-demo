@@ -28,6 +28,8 @@ cargo test -p seashell --test sol_math -- --nocapture --test-threads=1 2>&1 \
 cat <<'EOF'
 
 columns: CU = whole instruction, net CU = minus the noop instruction, per lane = net / 64.
-cost model: 100 base + ceil(lanes / 8) * words_per_lane * tokens, plus ~13 CU of BPF to set up the call.
+cost model: 100 base + ceil(lanes / 8) * 4 * things, where things = vector instructions per 8-lane chunk
+  (4 for the chunk's loads and store + per token: pushes 0, most ops 1, select 2, div/mod 12,
+  mul128_div 21, mul128_shr 25); plus ~13 CU of BPF to set up the call. same table for u128 lanes.
 the two "bpf" rows are the same mul128_shr and lerp formulas as plain BPF loops (u128 multiply via __multi3).
 EOF

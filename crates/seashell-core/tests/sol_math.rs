@@ -15,6 +15,8 @@ const PATTERN_NOOP: u8 = 0;
 const PATTERN_SOL_MATH: u8 = 1;
 const PATTERN_BPF_MUL128_SHR: u8 = 2;
 const PATTERN_BPF_LERP52: u8 = 3;
+const PATTERN_BPF_ADD: u8 = 4;
+const PATTERN_BPF_MUL_DIV: u8 = 5;
 
 const FLAG_WIDE: u8 = 0b0001;
 const VECTOR_A: u8 = 0b0010;
@@ -153,15 +155,11 @@ fn sol_math_matches_the_host_reference() {
     let c_1e9_bytes = bytes_u64(&c_1e9);
 
     let noop_cu = harness.run(PATTERN_NOOP, 0, LANE_COUNT, [&a_bytes, &b_bytes, &c_bytes]).0;
-    println!("\nlanes = {LANE_COUNT}, host path = {}", solana_syscalls::math::host_vector_path());
-    println!("| {:<14} | {:>8} | {:>8} | {:>8} |", "case", "CU", "net CU", "per lane");
-    println!("|{}|{}:|{}:|{}:|", "-".repeat(16), "-".repeat(9), "-".repeat(9), "-".repeat(9));
-    let mut row = |name: &str, cu: u64| {
-        let net = cu.saturating_sub(noop_cu);
-        println!("| {name:<14} | {cu:>8} | {net:>8} | {:>8.2} |", net as f64 / LANE_COUNT as f64);
-    };
-    row("noop", noop_cu);
+    let net = |cu: u64| cu.saturating_sub(noop_cu);
+    let per_lane = |cu: u64| net(cu) as f64 / LANE_COUNT as f64;
 
+    // every sol_math case, checked lane by lane; CU collected for the tables below
+    let mut sol_math_cu: Vec<(&str, u64)> = Vec::new();
     for (name, flags, tokens) in cases {
         let word = encode(flags, tokens);
         let c_input = if name == "mul_div_1e9" { &c_1e9 } else { &c };
@@ -178,7 +176,56 @@ fn sol_math_matches_the_host_reference() {
             .unwrap();
             assert_eq!(output[lane], expected, "{name} lane {lane}");
         }
-        row(name, cu);
+        sol_math_cu.push((name, cu));
+    }
+    let sol_math_net = |name: &str| net(sol_math_cu.iter().find(|(case, _)| *case == name).unwrap().1);
+
+    // the same four formulas as plain BPF loops, checked the same way
+    let (bpf_add_cu, output) = harness.run(PATTERN_BPF_ADD, 0, LANE_COUNT, [&a_bytes, &b_bytes, &c_bytes]);
+    for (lane, value) in lanes_u64(&output).into_iter().enumerate() {
+        assert_eq!(value, a[lane].wrapping_add(b[lane]), "bpf add lane {lane}");
+    }
+    let (bpf_mul128_shr_cu, output) = harness.run(PATTERN_BPF_MUL128_SHR, 0, LANE_COUNT, [&a_bytes, &b_bytes, &c_bytes]);
+    for (lane, value) in lanes_u64(&output).into_iter().enumerate() {
+        assert_eq!(value, ((a[lane] as u128 * b[lane] as u128) >> 26) as u64, "bpf mul128_shr lane {lane}");
+    }
+    let (bpf_mul_div_cu, output) = harness.run(PATTERN_BPF_MUL_DIV, 0, LANE_COUNT, [&a_bytes, &b_bytes, &c_1e9_bytes]);
+    for (lane, value) in lanes_u64(&output).into_iter().enumerate() {
+        assert_eq!(value, (a[lane] as u128 * b[lane] as u128 / 1_000_000_000) as u64, "bpf mul_div lane {lane}");
+    }
+    let (bpf_lerp_cu, output) = harness.run(PATTERN_BPF_LERP52, 0, LANE_COUNT, [&a_bytes, &b_bytes, &c_bytes]);
+    for (lane, value) in lanes_u64(&output).into_iter().enumerate() {
+        let expected = a[lane].wrapping_add(((b[lane].wrapping_sub(a[lane]) as u128 * c[lane] as u128) >> 52) as u64);
+        assert_eq!(value, expected, "bpf lerp52 lane {lane}");
+    }
+
+    println!("\nlanes = {LANE_COUNT}, host path = {}", solana_syscalls::math::host_vector_path());
+    println!("\nsame formula, sol_math vs a BPF loop (net CU, noop instruction subtracted)");
+    println!("| {:<24} | {:>8} | {:>8} | {:>8} | {:>8} | {:>14} |", "formula", "sol_math", "per lane", "bpf", "per lane", "bpf / sol_math");
+    println!("|{}|{}:|{}:|{}:|{}:|{}:|", "-".repeat(26), "-".repeat(9), "-".repeat(9), "-".repeat(9), "-".repeat(9), "-".repeat(15));
+    for (formula, case, bpf_cu) in [
+        ("a + b", "add", bpf_add_cu),
+        ("(a * b) >> 26", "mul128_shr", bpf_mul128_shr_cu),
+        ("a * b / 1e9", "mul_div_1e9", bpf_mul_div_cu),
+        ("a + ((b - a) * f >> 52)", "lerp52", bpf_lerp_cu),
+    ] {
+        let fast = sol_math_net(case);
+        println!(
+            "| {formula:<24} | {fast:>8} | {:>8.2} | {:>8} | {:>8.2} | {:>13.1}x |",
+            fast as f64 / LANE_COUNT as f64,
+            net(bpf_cu),
+            per_lane(bpf_cu),
+            net(bpf_cu) as f64 / fast as f64,
+        );
+    }
+
+    println!("\nevery sol_math case");
+    println!("| {:<16} | {:>8} | {:>8} | {:>8} |", "case", "CU", "net CU", "per lane");
+    println!("|{}|{}:|{}:|{}:|", "-".repeat(18), "-".repeat(9), "-".repeat(9), "-".repeat(9));
+    let row = |name: &str, cu: u64| println!("| {name:<16} | {cu:>8} | {:>8} | {:>8.2} |", net(cu), per_lane(cu));
+    row("noop", noop_cu);
+    for (name, cu) in &sol_math_cu {
+        row(name, *cu);
     }
 
     // partial vector chunks: on x86 this is the AVX-512 path against the scalar reference
@@ -200,19 +247,6 @@ fn sol_math_matches_the_host_reference() {
             }
         }
     }
-
-    // the same two formulas as BPF loops
-    let (cu, output) = harness.run(PATTERN_BPF_MUL128_SHR, 0, LANE_COUNT, [&a_bytes, &b_bytes, &c_bytes]);
-    for (lane, value) in lanes_u64(&output).into_iter().enumerate() {
-        assert_eq!(value, ((a[lane] as u128 * b[lane] as u128) >> 26) as u64, "bpf mul128_shr lane {lane}");
-    }
-    row("bpf mul128_shr", cu);
-    let (cu, output) = harness.run(PATTERN_BPF_LERP52, 0, LANE_COUNT, [&a_bytes, &b_bytes, &c_bytes]);
-    for (lane, value) in lanes_u64(&output).into_iter().enumerate() {
-        let expected = a[lane].wrapping_add(((b[lane].wrapping_sub(a[lane]) as u128 * c[lane] as u128) >> 52) as u64);
-        assert_eq!(value, expected, "bpf lerp52 lane {lane}");
-    }
-    row("bpf lerp52", cu);
 
     // u128 lanes
     let wide_a: Vec<u128> = (0..LANE_COUNT).map(|_| (rng.next() as u128) << 64 | rng.next() as u128).collect();
