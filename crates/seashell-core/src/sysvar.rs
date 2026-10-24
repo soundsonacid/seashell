@@ -10,9 +10,9 @@ use solana_instruction::{BorrowedAccountMeta, BorrowedInstruction, Instruction};
 use solana_program_runtime::sysvar_cache::SysvarCache;
 use solana_pubkey::Pubkey;
 use solana_rent::Rent;
-use solana_slot_hashes::{SlotHashes, MAX_ENTRIES};
+use solana_slot_hashes::{SlotHash, SlotHashes, MAX_ENTRIES};
 use solana_stake_interface::stake_history::{StakeHistory, StakeHistoryEntry};
-use solana_sysvar::{last_restart_slot::LastRestartSlot, SysvarSerialize};
+use solana_sysvar::last_restart_slot::LastRestartSlot;
 use solana_sysvar_id::{SysvarId, ID as SYSVAR};
 
 pub struct Sysvars {
@@ -35,8 +35,8 @@ impl Default for Sysvars {
         let rent = Rent::default();
 
         let slot_hashes = {
-            let mut default_slot_hashes = vec![(0, Hash::default()); MAX_ENTRIES];
-            default_slot_hashes[0] = (clock.slot, Hash::default());
+            let mut default_slot_hashes = vec![SlotHash { slot: 0, hash: Hash::default() }; MAX_ENTRIES];
+            default_slot_hashes[0] = SlotHash { slot: clock.slot, hash: Hash::default() };
             SlotHashes::new(&default_slot_hashes)
         };
 
@@ -57,7 +57,7 @@ impl Default for Sysvars {
 }
 
 impl Sysvars {
-    pub fn register_custom_sysvar<T: SysvarSerialize>(&self, sysvar: &T) {
+    pub fn register_custom_sysvar<T: serde::Serialize + SysvarId>(&self, sysvar: &T) {
         let data = bincode::serialize(sysvar).expect("Failed to serialize custom sysvar");
         self.custom_sysvars.write().insert(T::id(), data);
     }
@@ -140,28 +140,23 @@ impl Sysvars {
     pub fn get(&self, sysvar: &Pubkey) -> AccountSharedData {
         match sysvar {
             _ if sysvar == &Clock::id() => {
-                AccountSharedData::new_data(0, &*self.clock.read(), &SYSVAR).unwrap()
+                AccountSharedData::new_with_data(0, bincode::serialize(&*self.clock.read()).unwrap(), &SYSVAR)
             }
             _ if sysvar == &EpochSchedule::id() => {
-                AccountSharedData::new_data(0, &*self.epoch_schedule.read(), &SYSVAR).unwrap()
+                AccountSharedData::new_with_data(0, bincode::serialize(&*self.epoch_schedule.read()).unwrap(), &SYSVAR)
             }
-            _ if sysvar == &EpochRewards::id() => AccountSharedData::new_data(
-                0,
-                &bincode::serialize(&*self.epoch_rewards.read()).unwrap(),
-                &SYSVAR,
-            )
-            .unwrap(),
+            _ if sysvar == &EpochRewards::id() => AccountSharedData::new_with_data(0, bincode::serialize(&*self.epoch_rewards.read()).unwrap(), &SYSVAR),
             _ if sysvar == &Rent::id() => {
-                AccountSharedData::new_data(0, &*self.rent.read(), &SYSVAR).unwrap()
+                AccountSharedData::new_with_data(0, bincode::serialize(&*self.rent.read()).unwrap(), &SYSVAR)
             }
             _ if sysvar == &SlotHashes::id() => {
-                AccountSharedData::new_data(0, &*self.slot_hashes.read(), &SYSVAR).unwrap()
+                AccountSharedData::new_with_data(0, bincode::serialize(&*self.slot_hashes.read()).unwrap(), &SYSVAR)
             }
             _ if sysvar == &StakeHistory::id() => {
-                AccountSharedData::new_data(0, &*self.stake_history.read(), &SYSVAR).unwrap()
+                AccountSharedData::new_with_data(0, bincode::serialize(&*self.stake_history.read()).unwrap(), &SYSVAR)
             }
             _ if sysvar == &LastRestartSlot::id() => {
-                AccountSharedData::new_data(0, &*self.last_restart_slot.read(), &SYSVAR).unwrap()
+                AccountSharedData::new_with_data(0, bincode::serialize(&*self.last_restart_slot.read()).unwrap(), &SYSVAR)
             }
             _ => panic!("Unknown sysvar: {sysvar}"),
         }

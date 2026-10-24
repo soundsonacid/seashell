@@ -156,7 +156,7 @@ impl AccountsDb {
                 .enable_feature_id
                 .is_none_or(|feature_id| feature_set.is_active(&feature_id))
             {
-                let builtin_program = ProgramCacheEntry::new_builtin(0, builtin.register_fn);
+                let builtin_program = ProgramCacheEntry::new_builtin(builtin.register_fn);
                 self.programs
                     .replenish(builtin.program_id, Arc::new(builtin_program));
                 let mut account_shared_data =

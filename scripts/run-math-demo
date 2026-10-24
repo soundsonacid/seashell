@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# sol_math demo: a program calls the syscall with a few op sequences, every output lane is
+# checked against the host reference evaluator, and the CU is printed next to the same
+# arithmetic written as an ordinary BPF loop.
+#
+# On x86-64 with AVX-512 IFMA the syscall runs its vector path (eight lanes per step, stack in
+# zmm registers) and the check is against the scalar reference, so the same run is also the
+# vector-vs-scalar equivalence test. "host path" in the output says which one ran.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+echo "== sol_math demo"
+if command -v cargo-build-sbf >/dev/null 2>&1; then
+    echo "-- building programs/sol-math for sbpf v3"
+    cargo-build-sbf --manifest-path programs/sol-math/Cargo.toml --features bpf-entrypoint --arch v3 2>&1 \
+        | grep -E 'ERROR|^error|Finished' || true
+else
+    echo "-- cargo-build-sbf not found; using the checked-in crates/seashell-core/tests/fixtures/sol_math.so"
+fi
+
+echo
+echo "-- running (first build of the agave crates takes a few minutes)"
+cargo test -p seashell --test sol_math -- --nocapture --test-threads=1 2>&1 \
+    | sed -E 's/ \[20[0-9-]+T[^]]*\].*//' \
+    | grep -E '^lanes =|^\||^test |test result|panicked|skipping|^error' \
+    | cut -c1-160
+
+cat <<'EOF'
+
+columns: CU = whole instruction, net CU = minus the noop instruction, per lane = net / 64.
+cost model: 100 base + ceil(lanes / 8) * words_per_lane * tokens, plus ~13 CU of BPF to set up the call.
+the two "bpf" rows are the same mul128_shr and lerp formulas as plain BPF loops (u128 multiply via __multi3).
+EOF

@@ -1,0 +1,15 @@
+[package]
+name = "sol-math"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+bpf-entrypoint = []
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "sol_math"
+
+[dependencies]
+pinocchio = "0.9.0"
+solana-define-syscall = "5.2.0"

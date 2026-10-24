@@ -3,7 +3,6 @@ use {
     serde::{Deserialize, Serialize},
     solana_instruction::Instruction,
     solana_pubkey::Pubkey,
-    solana_sysvar::{Sysvar, SysvarSerialize},
     solana_sysvar_id::SysvarId,
 };
 
@@ -24,9 +23,6 @@ impl SysvarId for TestSysvar {
         pubkey == &TEST_SYSVAR_ID
     }
 }
-
-impl Sysvar for TestSysvar {}
-impl SysvarSerialize for TestSysvar {}
 
 #[test]
 fn test_custom_sysvar() {

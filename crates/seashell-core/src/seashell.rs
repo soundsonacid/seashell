@@ -7,7 +7,7 @@ use agave_feature_set::FeatureSet;
 use solana_account::{Account, AccountSharedData, ReadableAccount, WritableAccount};
 use solana_compute_budget::compute_budget::ComputeBudget;
 use solana_hash::Hash;
-use solana_instruction::error::InstructionError;
+use solana_instruction_error::InstructionError;
 use solana_instruction::Instruction;
 use solana_precompile_error::PrecompileError;
 use solana_program_runtime::invoke_context::{EnvironmentConfig, InvokeContext};
@@ -17,7 +17,6 @@ use solana_sbpf::profiler::CuProfiler;
 use solana_svm_callback::InvokeContextCallback;
 use solana_svm_log_collector::LogCollector;
 use solana_svm_timings::ExecuteTimings;
-use solana_sysvar::SysvarSerialize;
 use solana_transaction_context::transaction::TransactionContext;
 use solana_transaction_context::IndexOfAccount;
 
@@ -123,7 +122,7 @@ impl Seashell {
         seashell
     }
 
-    pub fn register_custom_sysvar<T: SysvarSerialize>(&self, sysvar: &T) {
+    pub fn register_custom_sysvar<T: serde::Serialize + solana_sysvar_id::SysvarId>(&self, sysvar: &T) {
         self.accounts_db.sysvars.register_custom_sysvar(sysvar);
     }
 

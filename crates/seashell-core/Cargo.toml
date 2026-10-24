@@ -45,6 +45,7 @@ solana-epoch-rewards = { workspace = true }
 solana-epoch-schedule = { workspace = true }
 solana-hash = { workspace = true }
 solana-instruction = { workspace = true }
+solana-instruction-error = { workspace = true }
 solana-instructions-sysvar = { workspace = true }
 solana-logger = { workspace = true }
 solana-precompile-error.workspace = true
