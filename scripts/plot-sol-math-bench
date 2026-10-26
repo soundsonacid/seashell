@@ -1,0 +1,208 @@
+#!/usr/bin/env -S uv run --no-project --python 3.12 --with matplotlib==3.9.2 python
+"""Aggregate sol_math_bench runs into a speedup chart and a results table.
+
+usage: scripts/plot-sol-math-bench <out dir> <run dir>...
+
+Each run dir is a SOL_MATH_BENCH_OUT of crates/seashell-core/tests/sol_math_bench.rs. Every
+number is the median over runs of the per-invocation slope; the band and the range columns
+span the slowest to fastest run.
+
+Writes <out dir>/speedup.png (speedup against lane count), costs.png (wall time, CU charged
+and CU per ns at the largest lane count), results.md and results.csv.
+"""
+
+import csv
+import statistics
+import sys
+from pathlib import Path
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt  # noqa: E402
+
+KERNELS = [
+    ("add", "a + b"),
+    ("mul128_shr", "(a * b) >> 26"),
+    ("mul_div_1e9", "a * b / 1e9"),
+    ("lerp52", "a + ((b - a) * f >> 52)"),
+]
+WIDTHS = ["u64", "u128"]
+# Okabe-Ito: distinguishable under the common color-vision deficiencies
+COLORS = {"add": "#0072B2", "mul128_shr": "#E69F00", "mul_div_1e9": "#009E73", "lerp52": "#CC79A7"}
+STYLES = {"u64": ("-", "o"), "u128": ("--", "s")}
+
+
+def load(run_dirs):
+    """(kernel, width, impl, lanes) -> list of (slope ns, CU) across runs."""
+    series = {}
+    for run in run_dirs:
+        with open(Path(run) / "fits.csv") as file:
+            for row in csv.DictReader(file):
+                key = (row["kernel"], row["width"], row["impl"], int(row["lanes"]))
+                series.setdefault(key, []).append((float(row["slope_ns"]), int(row["cu_per_repeat"])))
+    return series
+
+
+def summarize(series, run_count):
+    rows = []
+    lanes = sorted({key[3] for key in series})
+    for kernel, formula in KERNELS:
+        for width in WIDTHS:
+            for lane_count in lanes:
+                fast = series[(kernel, width, "sol_math", lane_count)]
+                slow = series[(kernel, width, "bpf", lane_count)]
+                assert len(fast) == len(slow) == run_count, (kernel, width, lane_count)
+                speedups = [s[0] / f[0] for f, s in zip(fast, slow)]
+                fast_ns = statistics.median(f[0] for f in fast)
+                slow_ns = statistics.median(s[0] for s in slow)
+                rows.append({
+                    "kernel": kernel,
+                    "formula": formula,
+                    "width": width,
+                    "lanes": lane_count,
+                    "sol_math_ns": fast_ns,
+                    "bpf_ns": slow_ns,
+                    "speedup": statistics.median(speedups),
+                    "speedup_min": min(speedups),
+                    "speedup_max": max(speedups),
+                    "sol_math_cu": fast[0][1],
+                    "bpf_cu": slow[0][1],
+                })
+    return rows
+
+
+def plot(rows, path, run_count):
+    figure, axes = plt.subplots(figsize=(9, 6.2), dpi=160)
+    lanes = sorted({row["lanes"] for row in rows})
+    for kernel, formula in KERNELS:
+        for width in WIDTHS:
+            points = [row for row in rows if row["kernel"] == kernel and row["width"] == width]
+            xs = [row["lanes"] for row in points]
+            line, marker = STYLES[width]
+            axes.fill_between(xs, [row["speedup_min"] for row in points], [row["speedup_max"] for row in points],
+                              color=COLORS[kernel], alpha=0.15, linewidth=0)
+            axes.plot(xs, [row["speedup"] for row in points], line, marker=marker, markersize=5,
+                      color=COLORS[kernel], linewidth=2, label=f"{formula}  ({width})")
+    axes.axhline(1, color="#888888", linewidth=1, linestyle=":")
+    axes.annotate("1× (no gain)", xy=(lanes[0], 1), xytext=(4, 4), textcoords="offset points",
+                  fontsize=8, color="#666666")
+    axes.set_xscale("log", base=2)
+    axes.set_yscale("log")
+    axes.set_xticks(lanes, [str(n) for n in lanes])
+    ticks = [0.2, 0.3, 0.5, 1, 2, 5, 10, 20, 50, 100]
+    low = min(row["speedup_min"] for row in rows) / 1.3
+    high = max(row["speedup_max"] for row in rows) * 1.3
+    axes.set_yticks([t for t in ticks if low <= t <= high], [f"{t:g}×" for t in ticks if low <= t <= high])
+    axes.set_ylim(low, high)
+    axes.minorticks_off()
+    axes.grid(True, which="major", color="#e4e4e4", linewidth=0.8)
+    axes.set_axisbelow(True)
+    for side in ("top", "right"):
+        axes.spines[side].set_visible(False)
+    axes.set_xlabel("lanes per call")
+    axes.set_ylabel("speedup (BPF time ÷ sol_math time)")
+    axes.set_title("sol_math vs BPF: speedup grows with lane count", loc="left", fontsize=12, fontweight="medium", pad=20)
+    axes.text(0, 1.015, f"per kernel invocation, VM setup excluded; median of {run_count} runs, band = slowest to fastest run",
+              transform=axes.transAxes, fontsize=8, color="#666666", va="bottom")
+    axes.legend(fontsize=8, frameon=False, ncol=4, loc="upper center", bbox_to_anchor=(0.5, -0.12))
+    figure.tight_layout()
+    figure.savefig(path)
+
+
+def plot_costs(rows, path, run_count, lane_count):
+    """Wall time, CU charged, and CU per ns at one lane count: sol_math beside BPF per kernel."""
+    picked = [row for row in rows if row["lanes"] == lane_count]
+    groups = [(kernel, formula, width) for kernel, formula in KERNELS for width in WIDTHS]
+    find = {(row["kernel"], row["width"]): row for row in picked}
+    short = {"add": "a+b", "mul128_shr": "a·b≫26", "mul_div_1e9": "a·b/1e9", "lerp52": "lerp52"}
+    labels = [f"{short[kernel]}\n{width}" for kernel, _, width in groups]
+    positions = range(len(groups))
+    bar = 0.38
+    sol_math_color, bpf_color = "#0072B2", "#9a9a9a"
+
+    panels = [
+        ("wall time per invocation", "ns (log)", lambda row: row["sol_math_ns"], lambda row: row["bpf_ns"], True),
+        ("CU charged per invocation", "CU (log)", lambda row: row["sol_math_cu"], lambda row: row["bpf_cu"], True),
+        ("CU charged per ns of wall time", "CU / ns", lambda row: row["sol_math_cu"] / row["sol_math_ns"],
+         lambda row: row["bpf_cu"] / row["bpf_ns"], False),
+    ]
+    figure, axes_row = plt.subplots(1, 3, figsize=(19, 6.2), dpi=150)
+    for axes, (title, unit, fast, slow, log) in zip(axes_row, panels):
+        fast_values = [fast(find[(kernel, width)]) for kernel, _, width in groups]
+        slow_values = [slow(find[(kernel, width)]) for kernel, _, width in groups]
+        axes.bar([p - bar / 2 for p in positions], fast_values, bar, color=sol_math_color, label="sol_math", zorder=2)
+        axes.bar([p + bar / 2 for p in positions], slow_values, bar, color=bpf_color, label="BPF loop (JIT)", zorder=2)
+        if log:
+            axes.set_yscale("log")
+        else:
+            # value labels: this panel is the argument for the CU price, so print it
+            top = max(fast_values + slow_values)
+            for p, value in zip(positions, fast_values):
+                axes.text(p - bar / 2, value + top * 0.01, f"{value:.2f}", ha="center", va="bottom", fontsize=7, color="#333333")
+            for p, value in zip(positions, slow_values):
+                axes.text(p + bar / 2, value + top * 0.01, f"{value:.2f}", ha="center", va="bottom", fontsize=7, color="#666666")
+            axes.set_ylim(0, top * 1.12)
+        axes.set_xticks(list(positions), labels, fontsize=8.5)
+        axes.set_title(title, loc="left", fontsize=11, fontweight="medium")
+        axes.set_ylabel(unit)
+        axes.grid(True, axis="y", which="major", color="#e4e4e4", linewidth=0.8, zorder=0)
+        axes.minorticks_off() if not log else None
+        for side in ("top", "right"):
+            axes.spines[side].set_visible(False)
+    # speedup over each pair in the wall-time panel
+    wall = axes_row[0]
+    for p, (kernel, _, width) in zip(positions, groups):
+        row = find[(kernel, width)]
+        wall.annotate(f"{row['speedup']:.1f}×", xy=(p, max(row["sol_math_ns"], row["bpf_ns"])), xytext=(0, 4),
+                      textcoords="offset points", ha="center", fontsize=7.5,
+                      color="#b00020" if row["speedup"] < 1 else "#222222")
+    handles, names = axes_row[0].get_legend_handles_labels()
+    figure.legend(handles, names, loc="upper right", ncol=2, frameon=False, fontsize=9)
+    figure.suptitle(f"sol_math vs BPF at {lane_count:,} lanes", x=0.01, ha="left", fontsize=13, fontweight="medium")
+    figure.text(0.01, 0.925, f"per kernel invocation, VM setup excluded; median of {run_count} runs. "
+                "right: higher means more CU charged for the same host time. "
+                "lerp52 = a + ((b - a) * f >> 52)",
+                fontsize=8.5, color="#666666", ha="left")
+    figure.tight_layout(rect=(0, 0, 1, 0.92))
+    figure.savefig(path)
+
+
+def number(value):
+    return f"{value:,.1f}" if value < 1000 else f"{value:,.0f}"
+
+
+def table(rows):
+    lines = [
+        "| formula | width | lanes | sol_math ns | BPF ns | speedup | sol_math CU | BPF CU | sol_math CU/ns | BPF CU/ns |",
+        "|---|---|--:|--:|--:|--:|--:|--:|--:|--:|",
+    ]
+    for row in rows:
+        lines.append(
+            f"| `{row['formula']}` | {row['width']} | {row['lanes']:,} | {number(row['sol_math_ns'])} | "
+            f"{number(row['bpf_ns'])} | {row['speedup']:.2f}× | {row['sol_math_cu']:,} | {row['bpf_cu']:,} | "
+            f"{row['sol_math_cu'] / row['sol_math_ns']:.2f} | {row['bpf_cu'] / row['bpf_ns']:.2f} |"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def main():
+    if len(sys.argv) < 3:
+        sys.exit(__doc__)
+    out, run_dirs = Path(sys.argv[1]), sys.argv[2:]
+    out.mkdir(parents=True, exist_ok=True)
+    rows = summarize(load(run_dirs), len(run_dirs))
+    plot(rows, out / "speedup.png", len(run_dirs))
+    lane_count = max(row["lanes"] for row in rows)
+    plot_costs(rows, out / "costs.png", len(run_dirs), lane_count)
+    (out / "results.md").write_text(table(rows))
+    with open(out / "results.csv", "w", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=list(rows[0]))
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({key: f"{value:.2f}" if isinstance(value, float) else value for key, value in row.items()})
+    print(f"wrote {out}/speedup.png, costs.png, results.md, results.csv")
+
+
+if __name__ == "__main__":
+    main()

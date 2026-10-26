@@ -390,6 +390,8 @@ impl Seashell {
                 self.compute_budget.to_cost(),
             ),
         };
+        // TransactionContext::new starts the meter at the 200k default; honor the configured limit
+        invoke_context.mock_set_remaining(self.compute_budget.compute_unit_limit);
 
         let mut compute_units_consumed = 0;
 

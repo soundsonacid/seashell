@@ -73,7 +73,7 @@ dependencies = [
 [[package]]
 name = "agave-feature-set"
 version = "4.5.0-alpha.2"
-source = "git+https://github.com/soundsonacid/agave?branch=sol-math#83b24ea5bcd4dd31a64af619f4d5e26ccf35af2b"
+source = "git+https://github.com/soundsonacid/agave?rev=3fc6e8afa4a7690f01f48c90579eca12f00282aa#3fc6e8afa4a7690f01f48c90579eca12f00282aa"
 dependencies = [
  "ahash",
  "solana-epoch-schedule",
@@ -86,7 +86,7 @@ dependencies = [
 [[package]]
 name = "agave-precompiles"
 version = "4.5.0-alpha.2"
-source = "git+https://github.com/soundsonacid/agave?branch=sol-math#83b24ea5bcd4dd31a64af619f4d5e26ccf35af2b"
+source = "git+https://github.com/soundsonacid/agave?rev=3fc6e8afa4a7690f01f48c90579eca12f00282aa#3fc6e8afa4a7690f01f48c90579eca12f00282aa"
 dependencies = [
  "agave-feature-set",
  "ed25519-dalek",
@@ -106,7 +106,7 @@ dependencies = [
 [[package]]
 name = "agave-random"
 version = "4.5.0-alpha.2"
-source = "git+https://github.com/soundsonacid/agave?branch=sol-math#83b24ea5bcd4dd31a64af619f4d5e26ccf35af2b"
+source = "git+https://github.com/soundsonacid/agave?rev=3fc6e8afa4a7690f01f48c90579eca12f00282aa#3fc6e8afa4a7690f01f48c90579eca12f00282aa"
 dependencies = [
  "rand 0.9.4",
 ]
@@ -114,7 +114,7 @@ dependencies = [
 [[package]]
 name = "agave-votor-messages"
 version = "4.5.0-alpha.2"
-source = "git+https://github.com/soundsonacid/agave?branch=sol-math#83b24ea5bcd4dd31a64af619f4d5e26ccf35af2b"
+source = "git+https://github.com/soundsonacid/agave?rev=3fc6e8afa4a7690f01f48c90579eca12f00282aa#3fc6e8afa4a7690f01f48c90579eca12f00282aa"
 dependencies = [
  "agave-feature-set",
  "log",
@@ -3640,7 +3640,7 @@ dependencies = [
 [[package]]
 name = "solana-account-decoder"
 version = "4.5.0-alpha.2"
-source = "git+https://github.com/soundsonacid/agave?branch=sol-math#83b24ea5bcd4dd31a64af619f4d5e26ccf35af2b"
+source = "git+https://github.com/soundsonacid/agave?rev=3fc6e8afa4a7690f01f48c90579eca12f00282aa#3fc6e8afa4a7690f01f48c90579eca12f00282aa"
 dependencies = [
  "Inflector",
  "base64 0.23.1",
@@ -3684,7 +3684,7 @@ dependencies = [
 [[package]]
 name = "solana-account-decoder-client-types"
 version = "4.5.0-alpha.2"
-source = "git+https://github.com/soundsonacid/agave?branch=sol-math#83b24ea5bcd4dd31a64af619f4d5e26ccf35af2b"
+source = "git+https://github.com/soundsonacid/agave?rev=3fc6e8afa4a7690f01f48c90579eca12f00282aa#3fc6e8afa4a7690f01f48c90579eca12f00282aa"
 dependencies = [
  "base64 0.23.1",
  "bs58",
@@ -3863,7 +3863,7 @@ dependencies = [
 [[package]]
 name = "solana-bpf-loader-program"
 version = "4.5.0-alpha.2"
-source = "git+https://github.com/soundsonacid/agave?branch=sol-math#83b24ea5bcd4dd31a64af619f4d5e26ccf35af2b"
+source = "git+https://github.com/soundsonacid/agave?rev=3fc6e8afa4a7690f01f48c90579eca12f00282aa#3fc6e8afa4a7690f01f48c90579eca12f00282aa"
 dependencies = [
  "bincode",
  "qualifier_attr",
@@ -3891,7 +3891,7 @@ dependencies = [
 [[package]]
 name = "solana-builtins"
 version = "4.5.0-alpha.2"
-source = "git+https://github.com/soundsonacid/agave?branch=sol-math#83b24ea5bcd4dd31a64af619f4d5e26ccf35af2b"
+source = "git+https://github.com/soundsonacid/agave?rev=3fc6e8afa4a7690f01f48c90579eca12f00282aa#3fc6e8afa4a7690f01f48c90579eca12f00282aa"
 dependencies = [
  "agave-feature-set",
  "solana-bpf-loader-program",
@@ -3934,7 +3934,7 @@ dependencies = [
 [[package]]
 name = "solana-compute-budget"
 version = "4.5.0-alpha.2"
-source = "git+https://github.com/soundsonacid/agave?branch=sol-math#83b24ea5bcd4dd31a64af619f4d5e26ccf35af2b"
+source = "git+https://github.com/soundsonacid/agave?rev=3fc6e8afa4a7690f01f48c90579eca12f00282aa#3fc6e8afa4a7690f01f48c90579eca12f00282aa"
 dependencies = [
  "solana-fee-structure",
  "solana-program-runtime",
@@ -3943,7 +3943,7 @@ dependencies = [
 [[package]]
 name = "solana-compute-budget-program"
 version = "4.5.0-alpha.2"
-source = "git+https://github.com/soundsonacid/agave?branch=sol-math#83b24ea5bcd4dd31a64af619f4d5e26ccf35af2b"
+source = "git+https://github.com/soundsonacid/agave?rev=3fc6e8afa4a7690f01f48c90579eca12f00282aa#3fc6e8afa4a7690f01f48c90579eca12f00282aa"
 dependencies = [
  "solana-program-runtime",
 ]
@@ -4296,7 +4296,7 @@ dependencies = [
 [[package]]
 name = "solana-leader-schedule"
 version = "4.5.0-alpha.2"
-source = "git+https://github.com/soundsonacid/agave?branch=sol-math#83b24ea5bcd4dd31a64af619f4d5e26ccf35af2b"
+source = "git+https://github.com/soundsonacid/agave?rev=3fc6e8afa4a7690f01f48c90579eca12f00282aa#3fc6e8afa4a7690f01f48c90579eca12f00282aa"
 dependencies = [
  "agave-random",
  "itertools 0.15.0",
@@ -4480,7 +4480,7 @@ dependencies = [
 [[package]]
 name = "solana-program-runtime"
 version = "4.5.0-alpha.2"
-source = "git+https://github.com/soundsonacid/agave?branch=sol-math#83b24ea5bcd4dd31a64af619f4d5e26ccf35af2b"
+source = "git+https://github.com/soundsonacid/agave?rev=3fc6e8afa4a7690f01f48c90579eca12f00282aa#3fc6e8afa4a7690f01f48c90579eca12f00282aa"
 dependencies = [
  "base64 0.23.1",
  "itertools 0.15.0",
@@ -4570,7 +4570,7 @@ dependencies = [
 [[package]]
 name = "solana-rpc-client"
 version = "4.5.0-alpha.2"
-source = "git+https://github.com/soundsonacid/agave?branch=sol-math#83b24ea5bcd4dd31a64af619f4d5e26ccf35af2b"
+source = "git+https://github.com/soundsonacid/agave?rev=3fc6e8afa4a7690f01f48c90579eca12f00282aa#3fc6e8afa4a7690f01f48c90579eca12f00282aa"
 dependencies = [
  "agave-votor-messages",
  "async-trait",
@@ -4611,7 +4611,7 @@ dependencies = [
 [[package]]
 name = "solana-rpc-client-api"
 version = "4.5.0-alpha.2"
-source = "git+https://github.com/soundsonacid/agave?branch=sol-math#83b24ea5bcd4dd31a64af619f4d5e26ccf35af2b"
+source = "git+https://github.com/soundsonacid/agave?rev=3fc6e8afa4a7690f01f48c90579eca12f00282aa#3fc6e8afa4a7690f01f48c90579eca12f00282aa"
 dependencies = [
  "anyhow",
  "jsonrpc-core",
@@ -4630,7 +4630,7 @@ dependencies = [
 [[package]]
 name = "solana-rpc-client-types"
 version = "4.5.0-alpha.2"
-source = "git+https://github.com/soundsonacid/agave?branch=sol-math#83b24ea5bcd4dd31a64af619f4d5e26ccf35af2b"
+source = "git+https://github.com/soundsonacid/agave?rev=3fc6e8afa4a7690f01f48c90579eca12f00282aa#3fc6e8afa4a7690f01f48c90579eca12f00282aa"
 dependencies = [
  "base64 0.23.1",
  "bs58",
@@ -4942,7 +4942,7 @@ dependencies = [
 [[package]]
 name = "solana-svm-callback"
 version = "4.5.0-alpha.2"
-source = "git+https://github.com/soundsonacid/agave?branch=sol-math#83b24ea5bcd4dd31a64af619f4d5e26ccf35af2b"
+source = "git+https://github.com/soundsonacid/agave?rev=3fc6e8afa4a7690f01f48c90579eca12f00282aa#3fc6e8afa4a7690f01f48c90579eca12f00282aa"
 dependencies = [
  "solana-account",
  "solana-clock",
@@ -4953,12 +4953,12 @@ dependencies = [
 [[package]]
 name = "solana-svm-feature-set"
 version = "4.5.0-alpha.2"
-source = "git+https://github.com/soundsonacid/agave?branch=sol-math#83b24ea5bcd4dd31a64af619f4d5e26ccf35af2b"
+source = "git+https://github.com/soundsonacid/agave?rev=3fc6e8afa4a7690f01f48c90579eca12f00282aa#3fc6e8afa4a7690f01f48c90579eca12f00282aa"
 
 [[package]]
 name = "solana-svm-log-collector"
 version = "4.5.0-alpha.2"
-source = "git+https://github.com/soundsonacid/agave?branch=sol-math#83b24ea5bcd4dd31a64af619f4d5e26ccf35af2b"
+source = "git+https://github.com/soundsonacid/agave?rev=3fc6e8afa4a7690f01f48c90579eca12f00282aa#3fc6e8afa4a7690f01f48c90579eca12f00282aa"
 dependencies = [
  "log",
 ]
@@ -4966,12 +4966,12 @@ dependencies = [
 [[package]]
 name = "solana-svm-measure"
 version = "4.5.0-alpha.2"
-source = "git+https://github.com/soundsonacid/agave?branch=sol-math#83b24ea5bcd4dd31a64af619f4d5e26ccf35af2b"
+source = "git+https://github.com/soundsonacid/agave?rev=3fc6e8afa4a7690f01f48c90579eca12f00282aa#3fc6e8afa4a7690f01f48c90579eca12f00282aa"
 
 [[package]]
 name = "solana-svm-timings"
 version = "4.5.0-alpha.2"
-source = "git+https://github.com/soundsonacid/agave?branch=sol-math#83b24ea5bcd4dd31a64af619f4d5e26ccf35af2b"
+source = "git+https://github.com/soundsonacid/agave?rev=3fc6e8afa4a7690f01f48c90579eca12f00282aa#3fc6e8afa4a7690f01f48c90579eca12f00282aa"
 dependencies = [
  "eager",
  "enum-iterator",
@@ -4995,7 +4995,7 @@ dependencies = [
 [[package]]
 name = "solana-svm-type-overrides"
 version = "4.5.0-alpha.2"
-source = "git+https://github.com/soundsonacid/agave?branch=sol-math#83b24ea5bcd4dd31a64af619f4d5e26ccf35af2b"
+source = "git+https://github.com/soundsonacid/agave?rev=3fc6e8afa4a7690f01f48c90579eca12f00282aa#3fc6e8afa4a7690f01f48c90579eca12f00282aa"
 dependencies = [
  "rand 0.9.4",
 ]
@@ -5003,7 +5003,7 @@ dependencies = [
 [[package]]
 name = "solana-syscalls"
 version = "4.5.0-alpha.2"
-source = "git+https://github.com/soundsonacid/agave?branch=sol-math#83b24ea5bcd4dd31a64af619f4d5e26ccf35af2b"
+source = "git+https://github.com/soundsonacid/agave?rev=3fc6e8afa4a7690f01f48c90579eca12f00282aa#3fc6e8afa4a7690f01f48c90579eca12f00282aa"
 dependencies = [
  "libsecp256k1 0.7.2",
  "num-traits",
@@ -5061,7 +5061,7 @@ dependencies = [
 [[package]]
 name = "solana-system-program"
 version = "4.5.0-alpha.2"
-source = "git+https://github.com/soundsonacid/agave?branch=sol-math#83b24ea5bcd4dd31a64af619f4d5e26ccf35af2b"
+source = "git+https://github.com/soundsonacid/agave?rev=3fc6e8afa4a7690f01f48c90579eca12f00282aa#3fc6e8afa4a7690f01f48c90579eca12f00282aa"
 dependencies = [
  "log",
  "solana-account",
@@ -5151,7 +5151,7 @@ dependencies = [
 [[package]]
 name = "solana-transaction-context"
 version = "4.5.0-alpha.2"
-source = "git+https://github.com/soundsonacid/agave?branch=sol-math#83b24ea5bcd4dd31a64af619f4d5e26ccf35af2b"
+source = "git+https://github.com/soundsonacid/agave?rev=3fc6e8afa4a7690f01f48c90579eca12f00282aa#3fc6e8afa4a7690f01f48c90579eca12f00282aa"
 dependencies = [
  "qualifier_attr",
  "solana-account",
@@ -5180,7 +5180,7 @@ dependencies = [
 [[package]]
 name = "solana-transaction-status-client-types"
 version = "4.5.0-alpha.2"
-source = "git+https://github.com/soundsonacid/agave?branch=sol-math#83b24ea5bcd4dd31a64af619f4d5e26ccf35af2b"
+source = "git+https://github.com/soundsonacid/agave?rev=3fc6e8afa4a7690f01f48c90579eca12f00282aa#3fc6e8afa4a7690f01f48c90579eca12f00282aa"
 dependencies = [
  "base64 0.23.1",
  "bs58",
@@ -5203,7 +5203,7 @@ dependencies = [
 [[package]]
 name = "solana-version"
 version = "4.5.0-alpha.2"
-source = "git+https://github.com/soundsonacid/agave?branch=sol-math#83b24ea5bcd4dd31a64af619f4d5e26ccf35af2b"
+source = "git+https://github.com/soundsonacid/agave?rev=3fc6e8afa4a7690f01f48c90579eca12f00282aa#3fc6e8afa4a7690f01f48c90579eca12f00282aa"
 dependencies = [
  "agave-feature-set",
  "rand 0.9.4",
@@ -5216,7 +5216,7 @@ dependencies = [
 [[package]]
 name = "solana-vote"
 version = "4.5.0-alpha.2"
-source = "git+https://github.com/soundsonacid/agave?branch=sol-math#83b24ea5bcd4dd31a64af619f4d5e26ccf35af2b"
+source = "git+https://github.com/soundsonacid/agave?rev=3fc6e8afa4a7690f01f48c90579eca12f00282aa#3fc6e8afa4a7690f01f48c90579eca12f00282aa"
 dependencies = [
  "log",
  "serde",
@@ -5268,7 +5268,7 @@ dependencies = [
 [[package]]
 name = "solana-vote-program"
 version = "4.5.0-alpha.2"
-source = "git+https://github.com/soundsonacid/agave?branch=sol-math#83b24ea5bcd4dd31a64af619f4d5e26ccf35af2b"
+source = "git+https://github.com/soundsonacid/agave?rev=3fc6e8afa4a7690f01f48c90579eca12f00282aa#3fc6e8afa4a7690f01f48c90579eca12f00282aa"
 dependencies = [
  "log",
  "solana-account",
@@ -5345,7 +5345,7 @@ dependencies = [
 [[package]]
 name = "solana-zk-elgamal-proof-program"
 version = "4.5.0-alpha.2"
-source = "git+https://github.com/soundsonacid/agave?branch=sol-math#83b24ea5bcd4dd31a64af619f4d5e26ccf35af2b"
+source = "git+https://github.com/soundsonacid/agave?rev=3fc6e8afa4a7690f01f48c90579eca12f00282aa#3fc6e8afa4a7690f01f48c90579eca12f00282aa"
 dependencies = [
  "bytemuck",
  "solana-instruction 4.0.0",
@@ -5407,7 +5407,7 @@ dependencies = [
 [[package]]
 name = "solana-zk-token-proof-program"
 version = "4.5.0-alpha.2"
-source = "git+https://github.com/soundsonacid/agave?branch=sol-math#83b24ea5bcd4dd31a64af619f4d5e26ccf35af2b"
+source = "git+https://github.com/soundsonacid/agave?rev=3fc6e8afa4a7690f01f48c90579eca12f00282aa#3fc6e8afa4a7690f01f48c90579eca12f00282aa"
 dependencies = [
  "solana-program-runtime",
 ]
