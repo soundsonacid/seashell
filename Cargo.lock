@@ -73,7 +73,7 @@ dependencies = [
 [[package]]
 name = "agave-feature-set"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 dependencies = [
  "ahash",
  "solana-epoch-schedule",
@@ -86,7 +86,7 @@ dependencies = [
 [[package]]
 name = "agave-precompiles"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 dependencies = [
  "agave-feature-set",
  "libsecp256k1 0.7.2",
@@ -106,7 +106,7 @@ dependencies = [
 [[package]]
 name = "agave-random"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 dependencies = [
  "rand 0.9.4",
 ]
@@ -114,7 +114,7 @@ dependencies = [
 [[package]]
 name = "agave-reserved-account-keys"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 dependencies = [
  "agave-feature-set",
  "solana-pubkey 4.4.0",
@@ -124,7 +124,7 @@ dependencies = [
 [[package]]
 name = "agave-votor-messages"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 dependencies = [
  "agave-feature-set",
  "log",
@@ -3833,7 +3833,7 @@ dependencies = [
 [[package]]
 name = "solana-account-decoder"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 dependencies = [
  "Inflector",
  "base64 0.23.1",
@@ -3877,7 +3877,7 @@ dependencies = [
 [[package]]
 name = "solana-account-decoder-client-types"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 dependencies = [
  "base64 0.23.1",
  "bs58",
@@ -4065,7 +4065,7 @@ dependencies = [
 [[package]]
 name = "solana-bpf-loader-program"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 dependencies = [
  "qualifier_attr",
  "solana-account",
@@ -4091,7 +4091,7 @@ dependencies = [
 [[package]]
 name = "solana-builtins"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 dependencies = [
  "agave-feature-set",
  "solana-bpf-loader-program",
@@ -4109,7 +4109,7 @@ dependencies = [
 [[package]]
 name = "solana-builtins-default-costs"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 dependencies = [
  "agave-feature-set",
  "ahash",
@@ -4143,7 +4143,7 @@ dependencies = [
 [[package]]
 name = "solana-compute-budget"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 dependencies = [
  "solana-fee-structure",
  "solana-program-runtime",
@@ -4152,7 +4152,7 @@ dependencies = [
 [[package]]
 name = "solana-compute-budget-instruction"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 dependencies = [
  "agave-feature-set",
  "solana-borsh",
@@ -4181,7 +4181,7 @@ dependencies = [
 [[package]]
 name = "solana-compute-budget-program"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 dependencies = [
  "solana-program-runtime",
 ]
@@ -4540,7 +4540,7 @@ dependencies = [
 [[package]]
 name = "solana-leader-schedule"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 dependencies = [
  "agave-random",
  "itertools 0.15.0",
@@ -4724,7 +4724,7 @@ dependencies = [
 [[package]]
 name = "solana-program-runtime"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 dependencies = [
  "base64 0.23.1",
  "itertools 0.15.0",
@@ -4814,7 +4814,7 @@ dependencies = [
 [[package]]
 name = "solana-rpc-client"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 dependencies = [
  "agave-votor-messages",
  "async-trait",
@@ -4855,7 +4855,7 @@ dependencies = [
 [[package]]
 name = "solana-rpc-client-api"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 dependencies = [
  "anyhow",
  "jsonrpc-core",
@@ -4874,7 +4874,7 @@ dependencies = [
 [[package]]
 name = "solana-rpc-client-types"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 dependencies = [
  "base64 0.23.1",
  "bs58",
@@ -4904,7 +4904,7 @@ checksum = "dcf09694a0fc14e5ffb18f9b7b7c0f15ecb6eac5b5610bf76a1853459d19daf9"
 [[package]]
 name = "solana-sbpf"
 version = "0.28.0"
-source = "git+https://github.com/soundsonacid/sbpf?rev=c782efaed560b9845befa7e61f1697bc1a37a8ba#c782efaed560b9845befa7e61f1697bc1a37a8ba"
+source = "git+https://github.com/soundsonacid/sbpf?rev=c504f88dfac0034eb533da18a4b2116dc9bfb4fd#c504f88dfac0034eb533da18a4b2116dc9bfb4fd"
 dependencies = [
  "byteorder",
  "combine",
@@ -5188,7 +5188,7 @@ dependencies = [
 [[package]]
 name = "solana-svm-callback"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 dependencies = [
  "solana-account",
  "solana-clock",
@@ -5199,12 +5199,12 @@ dependencies = [
 [[package]]
 name = "solana-svm-feature-set"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 
 [[package]]
 name = "solana-svm-log-collector"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 dependencies = [
  "log",
 ]
@@ -5212,12 +5212,12 @@ dependencies = [
 [[package]]
 name = "solana-svm-measure"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 
 [[package]]
 name = "solana-svm-timings"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 dependencies = [
  "eager",
  "enum-iterator",
@@ -5241,7 +5241,7 @@ dependencies = [
 [[package]]
 name = "solana-svm-type-overrides"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 dependencies = [
  "rand 0.9.4",
 ]
@@ -5249,7 +5249,7 @@ dependencies = [
 [[package]]
 name = "solana-syscalls"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 dependencies = [
  "libsecp256k1 0.7.2",
  "num-traits",
@@ -5308,7 +5308,7 @@ dependencies = [
 [[package]]
 name = "solana-system-program"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 dependencies = [
  "log",
  "solana-account",
@@ -5396,7 +5396,7 @@ dependencies = [
 [[package]]
 name = "solana-transaction-context"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 dependencies = [
  "qualifier_attr",
  "solana-account",
@@ -5425,7 +5425,7 @@ dependencies = [
 [[package]]
 name = "solana-transaction-status-client-types"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 dependencies = [
  "base64 0.23.1",
  "bs58",
@@ -5448,7 +5448,7 @@ dependencies = [
 [[package]]
 name = "solana-version"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 dependencies = [
  "agave-feature-set",
  "rand 0.9.4",
@@ -5461,7 +5461,7 @@ dependencies = [
 [[package]]
 name = "solana-vote"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 dependencies = [
  "log",
  "serde",
@@ -5512,7 +5512,7 @@ dependencies = [
 [[package]]
 name = "solana-vote-program"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 dependencies = [
  "log",
  "solana-account",
@@ -5573,7 +5573,7 @@ dependencies = [
 [[package]]
 name = "solana-zk-elgamal-proof-program"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 dependencies = [
  "bytemuck",
  "solana-instruction 4.0.0",
@@ -5635,7 +5635,7 @@ dependencies = [
 [[package]]
 name = "solana-zk-token-proof-program"
 version = "5.0.0-alpha.0"
-source = "git+https://github.com/soundsonacid/agave?rev=002586be685a4d3a3fed585cd9e778971dbe76af#002586be685a4d3a3fed585cd9e778971dbe76af"
+source = "git+https://github.com/soundsonacid/agave?rev=fff873d172f10ddf4a58af76c480e0902990befc#fff873d172f10ddf4a58af76c480e0902990befc"
 dependencies = [
  "solana-program-runtime",
 ]

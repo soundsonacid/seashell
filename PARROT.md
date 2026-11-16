@@ -245,5 +245,9 @@ transactions.
   transaction, so each transaction starts with cold caches.
 - One core, pinned but not isolated from the scheduler.
 - No hardware counters are used.
-- The call dispatch cache and counters in sbpf's `src/codegen/call_dispatch.rs` are experiment
-  code. The cache is off unless `call-dispatch-experiment` turns it on.
+- The sbpf fork carries experiment code that is off by default. That is the call dispatch
+  cache and counters (`src/codegen/call_dispatch.rs`), the step profile
+  (`src/step_profile.rs`) and the interpreter step layouts selected with
+  `PARROT_STEP_LAYOUT`. [PARROT_DIAGNOSTICS.md](PARROT_DIAGNOSTICS.md) says what each showed.
+  The call dispatch counters always count. The cache is off unless the
+  `call-dispatch-experiment` subcommand turns it on.

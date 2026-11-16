@@ -13,6 +13,7 @@
 mod blocks;
 mod diagnose;
 mod fidelity;
+mod interp;
 mod state;
 
 use std::collections::HashMap;
@@ -67,6 +68,14 @@ fn main() {
                 let slot = slot.map_or(String::new(), |slot| slot.to_string());
                 println!("{address}\t{version}\t{loader}\t{slot}");
             }
+        }
+        ["interp-experiment", blocks, accounts, rounds] => {
+            let blocks = blocks::read_blocks(Path::new(blocks));
+            let accounts = state::read_accounts(Path::new(accounts));
+            let (mut seashell, _) = state::seashell_from_accounts(&accounts);
+            let start = state::Start::of(&seashell);
+            let rounds = rounds.parse().expect("the number of measured rounds");
+            interp::report(&mut seashell, &start, &blocks, rounds);
         }
         ["bench", blocks, accounts] => bench(Path::new(blocks), Path::new(accounts), 5),
         ["bench", blocks, accounts, rounds] => bench(
