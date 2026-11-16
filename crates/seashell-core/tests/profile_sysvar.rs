@@ -29,7 +29,7 @@ fn profile_sysvar_program() {
         Clock::id(),
         Account {
             lamports: 1000,
-            data: bincode::serialize(&expected_clock).unwrap(),
+            data: wincode::serialize(&expected_clock).unwrap(),
             owner: SYSVAR,
             executable: false,
             rent_epoch: 0,

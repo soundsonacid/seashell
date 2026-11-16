@@ -10,9 +10,9 @@ use solana_instruction::{BorrowedAccountMeta, BorrowedInstruction, Instruction};
 use solana_program_runtime::sysvar_cache::SysvarCache;
 use solana_pubkey::Pubkey;
 use solana_rent::Rent;
-use solana_slot_hashes::{SlotHashes, MAX_ENTRIES};
+use solana_slot_hashes::{SlotHash, SlotHashes, MAX_ENTRIES};
 use solana_stake_interface::stake_history::{StakeHistory, StakeHistoryEntry};
-use solana_sysvar::{last_restart_slot::LastRestartSlot, SysvarSerialize};
+use solana_sysvar::last_restart_slot::LastRestartSlot;
 use solana_sysvar_id::{SysvarId, ID as SYSVAR};
 
 pub struct Sysvars {
@@ -35,8 +35,8 @@ impl Default for Sysvars {
         let rent = Rent::default();
 
         let slot_hashes = {
-            let mut default_slot_hashes = vec![(0, Hash::default()); MAX_ENTRIES];
-            default_slot_hashes[0] = (clock.slot, Hash::default());
+            let mut default_slot_hashes = vec![SlotHash::new(0, Hash::default()); MAX_ENTRIES];
+            default_slot_hashes[0] = SlotHash::new(clock.slot, Hash::default());
             SlotHashes::new(&default_slot_hashes)
         };
 
@@ -57,7 +57,7 @@ impl Default for Sysvars {
 }
 
 impl Sysvars {
-    pub fn register_custom_sysvar<T: SysvarSerialize>(&self, sysvar: &T) {
+    pub fn register_custom_sysvar<T: SysvarId + serde::Serialize>(&self, sysvar: &T) {
         let data = bincode::serialize(sysvar).expect("Failed to serialize custom sysvar");
         self.custom_sysvars.write().insert(T::id(), data);
     }
@@ -112,26 +112,14 @@ impl Sysvars {
 
     pub fn set(&self, sysvar: &Pubkey, account: AccountSharedData) {
         match sysvar {
-            _ if sysvar == &Clock::id() => {
-                *self.clock.write() = bincode::deserialize(account.data()).unwrap();
-            }
-            _ if sysvar == &EpochSchedule::id() => {
-                *self.epoch_schedule.write() = bincode::deserialize(account.data()).unwrap();
-            }
-            _ if sysvar == &EpochRewards::id() => {
-                *self.epoch_rewards.write() = bincode::deserialize(account.data()).unwrap();
-            }
-            _ if sysvar == &Rent::id() => {
-                *self.rent.write() = bincode::deserialize(account.data()).unwrap();
-            }
-            _ if sysvar == &SlotHashes::id() => {
-                *self.slot_hashes.write() = bincode::deserialize(account.data()).unwrap();
-            }
-            _ if sysvar == &StakeHistory::id() => {
-                *self.stake_history.write() = bincode::deserialize(account.data()).unwrap();
-            }
+            _ if sysvar == &Clock::id() => *self.clock.write() = decode(&account),
+            _ if sysvar == &EpochSchedule::id() => *self.epoch_schedule.write() = decode(&account),
+            _ if sysvar == &EpochRewards::id() => *self.epoch_rewards.write() = decode(&account),
+            _ if sysvar == &Rent::id() => *self.rent.write() = decode(&account),
+            _ if sysvar == &SlotHashes::id() => *self.slot_hashes.write() = decode(&account),
+            _ if sysvar == &StakeHistory::id() => *self.stake_history.write() = decode(&account),
             _ if sysvar == &LastRestartSlot::id() => {
-                *self.last_restart_slot.write() = bincode::deserialize(account.data()).unwrap();
+                *self.last_restart_slot.write() = decode(&account)
             }
             _ => panic!("Unknown sysvar: {sysvar}"),
         }
@@ -139,30 +127,13 @@ impl Sysvars {
 
     pub fn get(&self, sysvar: &Pubkey) -> AccountSharedData {
         match sysvar {
-            _ if sysvar == &Clock::id() => {
-                AccountSharedData::new_data(0, &*self.clock.read(), &SYSVAR).unwrap()
-            }
-            _ if sysvar == &EpochSchedule::id() => {
-                AccountSharedData::new_data(0, &*self.epoch_schedule.read(), &SYSVAR).unwrap()
-            }
-            _ if sysvar == &EpochRewards::id() => AccountSharedData::new_data(
-                0,
-                &bincode::serialize(&*self.epoch_rewards.read()).unwrap(),
-                &SYSVAR,
-            )
-            .unwrap(),
-            _ if sysvar == &Rent::id() => {
-                AccountSharedData::new_data(0, &*self.rent.read(), &SYSVAR).unwrap()
-            }
-            _ if sysvar == &SlotHashes::id() => {
-                AccountSharedData::new_data(0, &*self.slot_hashes.read(), &SYSVAR).unwrap()
-            }
-            _ if sysvar == &StakeHistory::id() => {
-                AccountSharedData::new_data(0, &*self.stake_history.read(), &SYSVAR).unwrap()
-            }
-            _ if sysvar == &LastRestartSlot::id() => {
-                AccountSharedData::new_data(0, &*self.last_restart_slot.read(), &SYSVAR).unwrap()
-            }
+            _ if sysvar == &Clock::id() => encode(&*self.clock.read()),
+            _ if sysvar == &EpochSchedule::id() => encode(&*self.epoch_schedule.read()),
+            _ if sysvar == &EpochRewards::id() => encode(&*self.epoch_rewards.read()),
+            _ if sysvar == &Rent::id() => encode(&*self.rent.read()),
+            _ if sysvar == &SlotHashes::id() => encode(&*self.slot_hashes.read()),
+            _ if sysvar == &StakeHistory::id() => encode(&*self.stake_history.read()),
+            _ if sysvar == &LastRestartSlot::id() => encode(&*self.last_restart_slot.read()),
             _ => panic!("Unknown sysvar: {sysvar}"),
         }
     }
@@ -174,9 +145,55 @@ impl Sysvars {
     }
 }
 
+/// The sysvar stored in the data of `account`.
+fn decode<T: wincode::DeserializeOwned<Dst = T>>(account: &AccountSharedData) -> T {
+    wincode::deserialize(account.data()).expect("Failed to deserialize sysvar")
+}
+
+/// The account holding `sysvar`, with the rent-exempt minimum of lamports as on a cluster.
+fn encode<T: wincode::Serialize<Src = T>>(sysvar: &T) -> AccountSharedData {
+    let data = wincode::serialize(sysvar).expect("Failed to serialize sysvar");
+    let lamports = Rent::default().minimum_balance(data.len());
+    AccountSharedData::new_with_data(lamports, data, &SYSVAR)
+}
+
 pub struct SysvarInstructions;
 
 impl SysvarInstructions {
+    /// The instructions sysvar for all the instructions of a transaction message.
+    pub fn construct_instructions_account_for_message(
+        message: &impl solana_svm_transaction::svm_message::SVMMessage,
+    ) -> AccountSharedData {
+        let account_keys = message.account_keys();
+        let borrowed_instructions = message
+            .program_instructions_iter()
+            .map(|(program_id, instruction)| BorrowedInstruction {
+                program_id,
+                accounts: instruction
+                    .accounts
+                    .iter()
+                    .map(|index| {
+                        let index = usize::from(*index);
+                        BorrowedAccountMeta {
+                            pubkey: account_keys.get(index).expect("a sanitized message"),
+                            is_signer: message.is_signer(index),
+                            is_writable: message.is_writable(index),
+                        }
+                    })
+                    .collect(),
+                data: instruction.data,
+            })
+            .collect::<Vec<_>>();
+        let data = solana_instructions_sysvar::construct_instructions_data(&borrowed_instructions)
+            .expect("failed to construct instructions data");
+
+        AccountSharedData::from(Account {
+            data,
+            owner: solana_sdk_ids::sysvar::id(),
+            ..Account::default()
+        })
+    }
+
     pub fn construct_instructions_account(instruction: &Instruction) -> AccountSharedData {
         let borrowed_accounts = instruction.accounts.iter().map(|meta| {
             BorrowedAccountMeta {

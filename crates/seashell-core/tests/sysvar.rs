@@ -27,7 +27,7 @@ fn test_sysvar_override() {
         unix_timestamp: 5,
     };
 
-    let expected_clock_bytes = bincode::serialize(&expected_clock).unwrap();
+    let expected_clock_bytes = wincode::serialize(&expected_clock).unwrap();
 
     let expected_clock_account = Account {
         lamports: 1000,

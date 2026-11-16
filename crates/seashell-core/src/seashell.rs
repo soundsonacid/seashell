@@ -2,28 +2,35 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::time::Duration;
 
 use agave_feature_set::FeatureSet;
 use solana_account::{Account, AccountSharedData, ReadableAccount, WritableAccount};
 use solana_compute_budget::compute_budget::ComputeBudget;
+use solana_compute_budget_instruction::instructions_processor::process_compute_budget_instructions;
+use solana_program_runtime::execution_budget::SVMTransactionExecutionBudget;
+use solana_svm_transaction::svm_message::SVMMessage;
+use solana_transaction_context::transaction_accounts::KeyedAccountSharedData;
 use solana_hash::Hash;
-use solana_instruction::error::InstructionError;
 use solana_instruction::Instruction;
+use solana_instruction_error::InstructionError;
 use solana_precompile_error::PrecompileError;
 use solana_program_runtime::invoke_context::{EnvironmentConfig, InvokeContext};
-use solana_program_runtime::loaded_programs::ProgramRuntimeEnvironments;
+use solana_program_runtime::program_cache::env::ProgramRuntimeEnvironments;
 use solana_pubkey::Pubkey;
 use solana_sbpf::profiler::CuProfiler;
 use solana_svm_callback::InvokeContextCallback;
 use solana_svm_log_collector::LogCollector;
 use solana_svm_timings::ExecuteTimings;
-use solana_sysvar::SysvarSerialize;
-use solana_transaction_context::transaction::TransactionContext;
-use solana_transaction_context::IndexOfAccount;
+use solana_sysvar_id::SysvarId;
+use solana_transaction_context::transaction::{ComputeMeter, TransactionContext};
+use solana_transaction_context::{DropOnBailOut, IndexOfAccount};
 
 use crate::accounts_db::AccountsDb;
 use crate::compile::{compile_accounts_for_instruction, INSTRUCTION_PROGRAM_ID_INDEX};
 use crate::error::SeashellError;
+use crate::execution_mode::ExecutionMode;
+use crate::sysvar::SysvarInstructions;
 use crate::symbolicate::{ProgramSymbolicators, Symbolicator};
 use crate::scenario::Scenario;
 
@@ -54,6 +61,9 @@ pub struct Seashell {
     pub symbolicators: HashMap<Pubkey, Symbolicator>,
     pub program_names: HashMap<Pubkey, String>,
     pub profiler: Option<CuProfiler>,
+    pub execution_mode: ExecutionMode,
+    /// The latest blockhash programs see. The system program compares nonces against it.
+    pub blockhash: Hash,
 }
 
 unsafe impl Send for Seashell {}
@@ -70,6 +80,8 @@ impl Default for Seashell {
             symbolicators: HashMap::new(),
             program_names: HashMap::new(),
             profiler: None,
+            execution_mode: ExecutionMode::PreferJit,
+            blockhash: Hash::default(),
         }
     }
 }
@@ -123,7 +135,7 @@ impl Seashell {
         seashell
     }
 
-    pub fn register_custom_sysvar<T: SysvarSerialize>(&self, sysvar: &T) {
+    pub fn register_custom_sysvar<T: SysvarId + serde::Serialize>(&self, sysvar: &T) {
         self.accounts_db.sysvars.register_custom_sysvar(sysvar);
     }
 
@@ -280,6 +292,7 @@ impl Seashell {
     }
 
     pub fn profile_instruction(&mut self, ixn: Instruction) -> InstructionProcessingResult {
+        self.execution_mode = ExecutionMode::Interpreted;
         let profiler = self.profiler.take().unwrap_or_default();
         let (result, profiler) = self.process_instruction_internal(ixn, Some(profiler));
         self.profiler = profiler;
@@ -364,7 +377,7 @@ impl Seashell {
             program_runtime_environment,
         );
         let environment_config = EnvironmentConfig::new(
-            Hash::default(),
+            self.blockhash,
             /* blockhash_lamports_per_signature */ 5000,
             false,
             &epoch_stake_callback,
@@ -391,6 +404,10 @@ impl Seashell {
                 self.compute_budget.to_cost(),
             ),
         };
+        invoke_context.execution_mode = self
+            .execution_mode
+            .try_into()
+            .expect("the execution mode is one of solana-sbpf's");
 
         let mut compute_units_consumed = 0;
 
@@ -460,6 +477,162 @@ impl Seashell {
         (processing_result, profiler)
     }
 
+    /// The limits a legacy or v0 message asks for with its compute budget instructions. A v1
+    /// message states its limits in its config instead, which the caller has to read.
+    ///
+    /// A message whose compute budget instructions are invalid gets the defaults.
+    pub fn limits_from_compute_budget_instructions(
+        &self,
+        message: &impl SVMMessage,
+    ) -> TransactionLimits {
+        let default_budget = self.compute_budget.to_budget();
+        match process_compute_budget_instructions(
+            message.program_instructions_iter(),
+            &self.feature_set,
+        ) {
+            Ok(limits) => TransactionLimits {
+                compute_unit_limit: limits.compute_unit_limit,
+                heap_size: limits.updated_heap_bytes,
+            },
+            Err(_) => TransactionLimits {
+                compute_unit_limit: default_budget.compute_unit_limit as u32,
+                heap_size: default_budget.heap_size,
+            },
+        }
+    }
+
+    /// Runs every instruction of a transaction message in one transaction context, the way the
+    /// runtime does: one compute meter of `limits.compute_unit_limit`, the instructions sysvar
+    /// for the whole message, and all-or-nothing account changes.
+    ///
+    /// Accounts the message names that are not in the accounts db start out empty. When
+    /// `config.memoize` is set and the transaction succeeds, its writable accounts are written
+    /// back. Fees, signatures, the blockhash and nonces are not looked at.
+    pub fn process_transaction(
+        &self,
+        message: &impl SVMMessage,
+        limits: TransactionLimits,
+    ) -> TransactionProcessingResult {
+        let account_keys = message.account_keys();
+        let transaction_accounts: Vec<KeyedAccountSharedData> = account_keys
+            .iter()
+            .map(|pubkey| {
+                let account = if *pubkey == solana_sdk_ids::sysvar::instructions::id() {
+                    SysvarInstructions::construct_instructions_account_for_message(message)
+                } else {
+                    self.accounts_db.account_maybe(pubkey).unwrap_or_default()
+                };
+                (*pubkey, account)
+            })
+            .collect();
+
+        let sysvar_cache = self
+            .accounts_db
+            .sysvars_for_instruction(&transaction_accounts);
+        let default_budget = self.compute_budget.to_budget();
+        let budget = SVMTransactionExecutionBudget {
+            compute_unit_limit: u64::from(limits.compute_unit_limit),
+            heap_size: limits.heap_size,
+            ..default_budget
+        };
+        // `TransactionContext::new` would hand out the 200,000 unit default whatever the budget.
+        let mut transaction_context = TransactionContext::new_with_feature_flags(
+            transaction_accounts,
+            self.accounts_db.sysvars.rent(),
+            budget.max_instruction_stack_depth,
+            budget.max_instruction_trace_length,
+            message.num_instructions(),
+            ComputeMeter::new(budget.compute_unit_limit),
+            DropOnBailOut::Disabled,
+        );
+
+        let epoch_stake_callback = SeashellInvokeContextCallback { feature_set: &self.feature_set };
+        let runtime_features = self.feature_set.runtime_features();
+        // The program cache is at the clock's slot, as the loader requires of a transaction that
+        // deploys a program. So a program loaded at this slot is not callable until the next
+        // one, as on a cluster. A program deployed by a transaction is gone after it, because
+        // this cache is a copy.
+        let mut programs = self.accounts_db.programs.clone();
+        programs.set_slot_for_tests(self.accounts_db.sysvars.clock().slot);
+        let program_runtime_environment = solana_syscalls::create_program_runtime_environment(
+            &runtime_features,
+            &default_budget,
+            false,
+            false,
+        )
+        .expect("failed to create program runtime environment");
+        let program_runtime_environments = ProgramRuntimeEnvironments::new(
+            program_runtime_environment.clone(),
+            program_runtime_environment,
+        );
+        let environment_config = EnvironmentConfig::new(
+            self.blockhash,
+            /* blockhash_lamports_per_signature */ 5000,
+            false,
+            &epoch_stake_callback,
+            &runtime_features,
+            &program_runtime_environments,
+            &sysvar_cache,
+        );
+        let mut invoke_context = InvokeContext::new(
+            &mut transaction_context,
+            &mut programs,
+            environment_config,
+            self.log_collector.clone(),
+            budget,
+            self.compute_budget.to_cost(),
+        );
+        invoke_context.execution_mode = self
+            .execution_mode
+            .try_into()
+            .expect("the execution mode is one of solana-sbpf's");
+
+        let mut compute_units_consumed = 0;
+        let times_before = solana_sbpf::timing::execution_times();
+        let result = invoke_context.process_message(
+            message,
+            &mut ExecuteTimings::default(),
+            &mut compute_units_consumed,
+        );
+        let times = solana_sbpf::timing::execution_times().since(&times_before);
+
+        if result.is_ok() && self.config.memoize {
+            for (index, pubkey) in account_keys.iter().enumerate() {
+                if !message.is_writable(index) {
+                    continue;
+                }
+                let accounts = transaction_context.accounts();
+                let view = accounts
+                    .try_borrow(index as IndexOfAccount)
+                    .expect("no account is borrowed after the transaction");
+                // An account left without lamports is gone: its data and owner do not survive
+                // the transaction.
+                let account = if view.lamports() == 0 {
+                    AccountSharedData::default()
+                } else {
+                    let mut account = AccountSharedData::new_with_data(
+                        view.lamports(),
+                        view.data().to_vec(),
+                        view.owner(),
+                    );
+                    account.set_executable(view.executable());
+                    account.set_rent_epoch(view.rent_epoch());
+                    account
+                };
+                self.accounts_db.set_account(*pubkey, account);
+            }
+        }
+
+        TransactionProcessingResult {
+            error: result.err(),
+            compute_units_consumed,
+            instruction_time: Duration::from_nanos(times.instructions_ns),
+            syscall_time: Duration::from_nanos(times.syscalls_ns),
+            syscalls: times.syscalls,
+            program_runs: times.program_runs,
+        }
+    }
+
     pub fn airdrop(&mut self, pubkey: Pubkey, amount: u64) {
         let mut account = self
             .accounts_db
@@ -499,6 +672,35 @@ pub struct InstructionProcessingResult {
     pub return_data: Vec<u8>,
     pub error: Option<InstructionProcessingError>,
     pub post_execution_accounts: Vec<(Pubkey, Account)>,
+}
+
+/// What a transaction may use.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TransactionLimits {
+    pub compute_unit_limit: u32,
+    /// Bytes of heap each program invocation gets.
+    pub heap_size: u32,
+}
+
+pub struct TransactionProcessingResult {
+    /// The index of the top-level instruction that failed, and how.
+    pub error: Option<(u8, InstructionError)>,
+    pub compute_units_consumed: u64,
+    /// The time spent executing the instructions of SBF programs, CPI callees included.
+    pub instruction_time: Duration,
+    /// The time spent in the syscalls the programs made. For a CPI that is everything around
+    /// the callee's instructions: translating accounts, serializing the callee's input,
+    /// creating its VM, copying results back.
+    ///
+    /// `instruction_time + syscall_time` is the time inside the top-level programs' runs. What
+    /// happens before and after a top-level run (account loading, serialization, VM creation,
+    /// compilation) is in neither.
+    pub syscall_time: Duration,
+    /// How many syscalls the programs made. Timing one has a cost, which
+    /// `solana_sbpf::timing::syscall_timer_overhead` measures.
+    pub syscalls: u64,
+    /// How many times an SBF program was run, CPI callees included.
+    pub program_runs: u64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -718,6 +920,82 @@ mod tests {
             "Expected no return data, got: {:?}",
             result.return_data
         );
+    }
+
+    /// The same transfer under every execution mode, on one `Seashell` so that the token program
+    /// gets recompiled between the legacy and the parrot JIT in both directions.
+    #[test]
+    fn test_spl_transfer_in_every_execution_mode() {
+        use std::sync::atomic::Ordering;
+
+        use solana_program_runtime::program_cache::entry::{
+            ProgramCacheEntry, ProgramCacheEntryType,
+        };
+
+        crate::set_log();
+        let mut seashell = Seashell::new();
+        let from = Pubkey::new_unique();
+        let to = Pubkey::new_unique();
+        let from_authority = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+
+        create_mint_account(&mut seashell, mint, 1000);
+        create_token_account(&mut seashell, from, mint, from_authority, 1000);
+        create_token_account(&mut seashell, to, mint, Pubkey::new_unique(), 0);
+        seashell.airdrop(from_authority, 1000);
+
+        let mut data = [0; 9];
+        data[0] = 3;
+        data[1..9].copy_from_slice(&100u64.to_le_bytes());
+        let ixn = Instruction {
+            program_id: crate::spl::TOKEN_PROGRAM_ID,
+            accounts: vec![
+                AccountMeta::new(from, true),
+                AccountMeta::new(to, false),
+                AccountMeta::new_readonly(from_authority, true),
+            ],
+            data: data.to_vec(),
+        };
+
+        // (mode, runs in a JIT, the JIT output is parrot's)
+        let modes = [
+            (ExecutionMode::Interpreted, false, false),
+            (ExecutionMode::Jit, true, false),
+            (ExecutionMode::ParrotInterpreted, false, false),
+            (ExecutionMode::ParrotJit, true, true),
+            (ExecutionMode::Jit, true, false),
+        ];
+        for (mode, is_jit, is_parrot_jit) in modes {
+            let token_program = seashell
+                .accounts_db
+                .programs
+                .get_entry_for_tests(&crate::spl::TOKEN_PROGRAM_ID)
+                .expect("token program is loaded")
+                .clone();
+            let invocations = |entry: &ProgramCacheEntry| {
+                (
+                    entry.stats.jit_invocations.load(Ordering::Relaxed),
+                    entry.stats.interpreted_invocations.load(Ordering::Relaxed),
+                )
+            };
+            let (jit_before, interpreted_before) = invocations(&token_program);
+
+            seashell.execution_mode = mode;
+            let result = seashell.process_instruction(ixn.clone());
+            assert!(result.error.is_none(), "{mode:?}: {:?}", result.error);
+            assert_eq!(result.compute_units_consumed, 76, "{mode:?}");
+
+            let (jit_after, interpreted_after) = invocations(&token_program);
+            assert_eq!(jit_after - jit_before, is_jit as u64, "{mode:?}");
+            assert_eq!(interpreted_after - interpreted_before, !is_jit as u64, "{mode:?}");
+            if is_jit {
+                let ProgramCacheEntryType::Loaded(executable) = &token_program.program else {
+                    panic!("token program is not a loaded executable");
+                };
+                let compiled = executable.get_compiled_program().expect("compiled");
+                assert_eq!(compiled.is_parrot(), is_parrot_jit, "{mode:?}");
+            }
+        }
     }
 
     #[test]

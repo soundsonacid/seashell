@@ -7,9 +7,9 @@ use parking_lot::RwLock;
 use solana_account::{AccountSharedData, ReadableAccount, WritableAccount};
 use solana_compute_budget::compute_budget::ComputeBudget;
 use solana_instruction::Instruction;
-use solana_program_runtime::program_cache_entry::ProgramCacheEntry;
-use solana_program_runtime::program_metrics::LoadProgramMetrics;
-use solana_program_runtime::loaded_programs::ProgramCacheForTxBatch;
+use solana_program_runtime::program_cache::entry::ProgramCacheEntry;
+use solana_program_runtime::program_cache::metrics::LoadProgramMetrics;
+use solana_program_runtime::program_cache::tx_batch::ProgramCacheForTxBatch;
 use solana_program_runtime::sysvar_cache::SysvarCache;
 use solana_pubkey::Pubkey;
 use solana_transaction_context::transaction_accounts::KeyedAccountSharedData;
@@ -156,7 +156,7 @@ impl AccountsDb {
                 .enable_feature_id
                 .is_none_or(|feature_id| feature_set.is_active(&feature_id))
             {
-                let builtin_program = ProgramCacheEntry::new_builtin(0, builtin.register_fn);
+                let builtin_program = ProgramCacheEntry::new_builtin(builtin.register_fn);
                 self.programs
                     .replenish(builtin.program_id, Arc::new(builtin_program));
                 let mut account_shared_data =

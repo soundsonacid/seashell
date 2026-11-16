@@ -3,6 +3,7 @@ pub mod accounts_db;
 pub mod compile;
 pub mod dwarf;
 pub mod error;
+pub mod execution_mode;
 pub mod precompiles;
 pub mod scenario;
 pub mod seashell;
@@ -10,6 +11,7 @@ pub mod spl;
 pub mod symbolicate;
 pub mod sysvar;
 
+pub use execution_mode::ExecutionMode;
 pub use seashell::*;
 
 pub fn set_log() {

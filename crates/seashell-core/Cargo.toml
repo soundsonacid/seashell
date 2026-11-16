@@ -41,10 +41,13 @@ solana-bpf-loader-program = { workspace = true }
 solana-builtins = { workspace = true }
 solana-clock = { workspace = true }
 solana-compute-budget = { workspace = true }
+solana-compute-budget-instruction = { workspace = true }
+solana-svm-transaction = { workspace = true }
 solana-epoch-rewards = { workspace = true }
 solana-epoch-schedule = { workspace = true }
 solana-hash = { workspace = true }
 solana-instruction = { workspace = true }
+solana-instruction-error = { workspace = true }
 solana-instructions-sysvar = { workspace = true }
 solana-logger = { workspace = true }
 solana-precompile-error.workspace = true
@@ -64,6 +67,7 @@ solana-sysvar = { workspace = true }
 solana-sysvar-id = { workspace = true }
 solana-transaction-context = { workspace = true }
 thiserror = { workspace = true }
+wincode = { workspace = true }
 
 [dev-dependencies]
 ed25519-dalek = { workspace = true }

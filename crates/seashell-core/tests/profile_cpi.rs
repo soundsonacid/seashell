@@ -26,7 +26,7 @@ fn profile_cpi_caller_into_sysvar() {
         Clock::id(),
         Account {
             lamports: 1000,
-            data: bincode::serialize(&Clock::default()).unwrap(),
+            data: wincode::serialize(&Clock::default()).unwrap(),
             owner: SYSVAR,
             executable: false,
             rent_epoch: 0,
