@@ -21,6 +21,8 @@ use std::time::Instant;
 
 use blocks::Block;
 use seashell::{ExecutionMode, Seashell};
+use solana_sbpf::codegen::call_dispatch::CallDispatchCounts;
+use solana_sbpf::timing::VERSIONS;
 use solana_instruction_error::InstructionError;
 use solana_account::{ReadableAccount, WritableAccount};
 use solana_pubkey::Pubkey;
@@ -147,8 +149,10 @@ struct Run {
     by_syscall: HashMap<&'static str, (u64, u64)>,
     /// `call imm` instructions that parrot resolved at run time, per transaction: calls to the
     /// program's own functions, and syscalls. Zero in the legacy modes, which do not count.
-    dispatched_internal_calls: Vec<u64>,
-    dispatched_syscalls: Vec<u64>,
+    dispatched: Vec<CallDispatchCounts>,
+    /// Instruction time in milliseconds and program runs, by the SBPF version of the program
+    /// executing, over the whole pass.
+    by_version: [(f64, u64); VERSIONS],
 }
 
 /// What timing one syscall adds, in nanoseconds: to the syscall's time and to the instruction
@@ -184,8 +188,8 @@ fn run_blocks(
     let mut syscall_ns = Vec::new();
     let mut errors = Vec::new();
     let syscalls_before = solana_sbpf::timing::syscall_times();
-    let mut dispatched_internal_calls = Vec::new();
-    let mut dispatched_syscalls = Vec::new();
+    let versions_before = solana_sbpf::timing::version_times();
+    let mut dispatched = Vec::new();
     for (block_index, block) in blocks.iter().enumerate() {
         blocks::enter_block(seashell, blocks, block_index, start);
         for transaction in &block.transactions {
@@ -198,10 +202,10 @@ fn run_blocks(
             let limits = blocks::limits(seashell, &transaction.transaction);
             let dispatched_before = solana_sbpf::codegen::call_dispatch::call_dispatch_counts();
             let result = seashell.process_transaction(&transaction.transaction, limits);
-            let dispatched = solana_sbpf::codegen::call_dispatch::call_dispatch_counts()
-                .since(&dispatched_before);
-            dispatched_internal_calls.push(dispatched.internal_calls);
-            dispatched_syscalls.push(dispatched.syscalls + dispatched.static_syscalls);
+            dispatched.push(
+                solana_sbpf::codegen::call_dispatch::call_dispatch_counts()
+                    .since(&dispatched_before),
+            );
             outcomes.push(Outcome {
                 succeeded: result.error.is_none(),
                 compute_units_consumed: result.compute_units_consumed,
@@ -222,6 +226,16 @@ fn run_blocks(
         }
     }
 
+    let versions_after = solana_sbpf::timing::version_times();
+    let by_version: [(f64, u64); VERSIONS] = std::array::from_fn(|version| {
+        let (before, after) = (versions_before[version], versions_after[version]);
+        let ns = TimerOverhead::without(
+            after.instructions_ns - before.instructions_ns,
+            after.syscalls - before.syscalls,
+            overhead.in_instructions,
+        );
+        (ns as f64 / 1e6, after.program_runs - before.program_runs)
+    });
     let mut by_syscall: HashMap<&'static str, (u64, u64)> = HashMap::new();
     for after in solana_sbpf::timing::syscall_times() {
         let before = syscalls_before.iter().find(|before| before.name == after.name);
@@ -240,8 +254,8 @@ fn run_blocks(
         syscall_ns,
         errors,
         by_syscall,
-        dispatched_internal_calls,
-        dispatched_syscalls,
+        dispatched,
+        by_version,
     }
 }
 
@@ -287,6 +301,9 @@ fn bench(blocks_directory: &Path, accounts_file: &Path, measured_rounds: usize) 
     let mut instruction_ns: [Vec<Vec<u64>>; MODES.len()] = Default::default();
     let mut syscall_ns: [Vec<Vec<u64>>; MODES.len()] = Default::default();
     let mut by_syscall: [Vec<HashMap<&'static str, (u64, u64)>>; MODES.len()] = Default::default();
+    let mut by_version: [Vec<[(f64, u64); VERSIONS]>; MODES.len()] = Default::default();
+    // What parrot resolved at run time, per transaction. Only the parrot modes count it.
+    let mut dispatched = Vec::new();
     for round in 0..=measured_rounds {
         for (index, (_, mode)) in MODES.into_iter().enumerate() {
             seashell.execution_mode = mode;
@@ -294,6 +311,9 @@ fn bench(blocks_directory: &Path, accounts_file: &Path, measured_rounds: usize) 
             // first use, which leaves its code cold.
             run_blocks(&mut seashell, &start, &blocks, overhead);
             let run = run_blocks(&mut seashell, &start, &blocks, overhead);
+            if mode == ExecutionMode::ParrotJit {
+                dispatched = run.dispatched.clone();
+            }
             if reference.is_none() {
                 reference_errors = run.errors;
             }
@@ -309,11 +329,16 @@ fn bench(blocks_directory: &Path, accounts_file: &Path, measured_rounds: usize) 
                 instruction_ns[index].push(run.instruction_ns);
                 syscall_ns[index].push(run.syscall_ns);
                 by_syscall[index].push(run.by_syscall);
+                by_version[index].push(run.by_version);
             }
         }
         eprintln!("round {round} of {measured_rounds} done");
     }
     let reference = reference.expect("at least the warmup round ran");
+    println!(
+        "programs by SBPF version: {:?}",
+        report.programs_by_version
+    );
 
     // How close the replay is to what the cluster did.
     let same_status: Vec<bool> = reference
@@ -397,6 +422,137 @@ fn bench(blocks_directory: &Path, accounts_file: &Path, measured_rounds: usize) 
     print_syscalls(&by_syscall);
     print_cost_model(&reference, &instruction_ns);
     print_programs(&cluster, &instruction_ns);
+    print_by_version(&by_version);
+    print_near_call_attribution(&dispatched, &instruction_ns);
+}
+
+const LEGACY_JIT: usize = 1;
+const PARROT_JIT: usize = 3;
+
+/// Instruction time by the SBPF version of the program that is executing, per mode, as the
+/// median over the rounds.
+fn print_by_version(by_version: &[Vec<[(f64, u64); VERSIONS]>; MODES.len()]) {
+    println!();
+    println!("instruction time by SBPF version of the executing program (ms, median over the rounds)");
+    println!();
+    println!(
+        "| programs' version | program runs | legacy interp | legacy jit | parrot interp | parrot \
+         jit | parrot jit vs legacy jit | parrot jit minus legacy jit (ms) |"
+    );
+    println!("|---|---:|---:|---:|---:|---:|---:|---:|");
+    let median_ms = |mode: usize, version: usize| {
+        let mut samples: Vec<f64> = by_version[mode].iter().map(|round| round[version].0).collect();
+        samples.sort_by(f64::total_cmp);
+        samples[samples.len() / 2]
+    };
+    let mut totals = [0.0; MODES.len()];
+    for version in 0..VERSIONS {
+        let runs = by_version[0][0][version].1;
+        if runs == 0 {
+            continue;
+        }
+        let ms: [f64; MODES.len()] = std::array::from_fn(|mode| median_ms(mode, version));
+        for mode in 0..MODES.len() {
+            totals[mode] += ms[mode];
+        }
+        println!(
+            "| V{version} | {runs} | {:.1} | {:.1} | {:.1} | {:.1} | {:.2}x | {:+.1} |",
+            ms[0],
+            ms[1],
+            ms[2],
+            ms[3],
+            ms[LEGACY_JIT] / ms[PARROT_JIT],
+            ms[PARROT_JIT] - ms[LEGACY_JIT],
+        );
+    }
+    println!(
+        "| all | | {:.1} | {:.1} | {:.1} | {:.1} | {:.2}x | {:+.1} |",
+        totals[0],
+        totals[1],
+        totals[2],
+        totals[3],
+        totals[LEGACY_JIT] / totals[PARROT_JIT],
+        totals[PARROT_JIT] - totals[LEGACY_JIT],
+    );
+}
+
+/// Parrot jit against legacy jit, instruction time per transaction (median over the rounds),
+/// grouped by what parrot had to resolve at run time in the transaction.
+fn print_near_call_attribution(
+    dispatched: &[CallDispatchCounts],
+    instruction_ns: &[Vec<Vec<u64>>; MODES.len()],
+) {
+    let median_ms = |mode: usize, transaction: usize| {
+        let mut samples: Vec<u64> =
+            instruction_ns[mode].iter().map(|round| round[transaction]).collect();
+        samples.sort_unstable();
+        samples[samples.len() / 2] as f64 / 1e6
+    };
+    let legacy: Vec<f64> = (0..dispatched.len()).map(|tx| median_ms(LEGACY_JIT, tx)).collect();
+    let parrot: Vec<f64> = (0..dispatched.len()).map(|tx| median_ms(PARROT_JIT, tx)).collect();
+    let print_groups = |title: &str, groups: &[(&str, &dyn Fn(&CallDispatchCounts) -> bool)]| {
+        println!();
+        println!("{title}");
+        println!();
+        println!(
+            "| transactions | txs | near calls resolved at run time | syscalls from pre-v3 \
+             programs | syscalls from v3 programs | legacy jit (ms) | parrot jit (ms) | parrot jit \
+             vs legacy jit | gap (ms) | gap per near call (ns) |"
+        );
+        println!("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
+        for (label, belongs) in groups {
+            let members: Vec<usize> =
+                (0..dispatched.len()).filter(|&tx| belongs(&dispatched[tx])).collect();
+            let sum = |field: &dyn Fn(&CallDispatchCounts) -> u64| -> u64 {
+                members.iter().map(|&tx| field(&dispatched[tx])).sum()
+            };
+            let near_calls = sum(&|counts| counts.internal_calls);
+            let legacy_ms: f64 = members.iter().map(|&tx| legacy[tx]).sum();
+            let parrot_ms: f64 = members.iter().map(|&tx| parrot[tx]).sum();
+            let per_call = if near_calls == 0 {
+                String::new()
+            } else {
+                format!("{:.1}", (parrot_ms - legacy_ms) * 1e6 / near_calls as f64)
+            };
+            println!(
+                "| {label} | {} | {near_calls} | {} | {} | {legacy_ms:.1} | {parrot_ms:.1} | \
+                 {:.2}x | {:+.1} | {per_call} |",
+                members.len(),
+                sum(&|counts| counts.syscalls),
+                sum(&|counts| counts.static_syscalls),
+                legacy_ms / parrot_ms,
+                parrot_ms - legacy_ms,
+            );
+        }
+    };
+
+    print_groups(
+        "parrot jit against legacy jit, instruction time, by what the transaction's programs call",
+        &[
+            ("no calls and no syscalls", &|c| {
+                c.internal_calls == 0 && c.syscalls == 0 && c.static_syscalls == 0
+            }),
+            ("v3 programs only (syscalls, near calls are relative)", &|c| {
+                c.internal_calls == 0 && c.syscalls == 0 && c.static_syscalls > 0
+            }),
+            ("pre-v3 programs that make syscalls but no near calls", &|c| {
+                c.internal_calls == 0 && c.syscalls > 0
+            }),
+            ("pre-v3 programs that make near calls", &|c| c.internal_calls > 0),
+            ("all", &|_| true),
+        ],
+    );
+    print_groups(
+        "the same, by how many near calls the transaction makes",
+        &[
+            ("0", &|c| c.internal_calls == 0),
+            ("1 to 10", &|c| (1..=10).contains(&c.internal_calls)),
+            ("11 to 100", &|c| (11..=100).contains(&c.internal_calls)),
+            ("101 to 1,000", &|c| (101..=1_000).contains(&c.internal_calls)),
+            ("1,001 to 10,000", &|c| (1_001..=10_000).contains(&c.internal_calls)),
+            ("over 10,000", &|c| c.internal_calls > 10_000),
+        ],
+    );
 }
 
 /// Splits each mode's instruction time into a cost per compute unit, per syscall and per
@@ -518,7 +674,7 @@ fn call_dispatch_experiment(blocks_directory: &Path, accounts_file: &Path, measu
     // Instruction time per transaction, per measured round.
     let mut per_transaction_ns: [Vec<Vec<u64>>; CONFIGURATIONS.len()] = Default::default();
     // What parrot dispatched at run time, per transaction.
-    let mut dispatched: Option<(Vec<u64>, Vec<u64>)> = None;
+    let mut dispatched: Option<Vec<CallDispatchCounts>> = None;
     for round in 0..=measured_rounds {
         for (index, (_, mode, cached)) in CONFIGURATIONS.into_iter().enumerate() {
             seashell.execution_mode = mode;
@@ -545,7 +701,7 @@ fn call_dispatch_experiment(blocks_directory: &Path, accounts_file: &Path, measu
                 per_transaction_ns[index].push(run.instruction_ns);
             }
             if index == 1 {
-                dispatched = Some((run.dispatched_internal_calls, run.dispatched_syscalls));
+                dispatched = Some(run.dispatched);
             }
         }
         eprintln!("round {round} of {measured_rounds} done");
@@ -587,7 +743,10 @@ fn call_dispatch_experiment(blocks_directory: &Path, accounts_file: &Path, measu
 
     // Where parrot jit loses to legacy jit, transaction by transaction.
     const PARROT_JIT: usize = 4;
-    let (internal_calls, syscalls) = dispatched.expect("parrot interp ran");
+    let dispatched = dispatched.expect("parrot interp ran");
+    let internal_calls: Vec<u64> = dispatched.iter().map(|counts| counts.internal_calls).collect();
+    let syscalls: Vec<u64> =
+        dispatched.iter().map(|counts| counts.syscalls + counts.static_syscalls).collect();
     let median_ns = |configuration: usize, transaction: usize| {
         let mut samples: Vec<u64> =
             per_transaction_ns[configuration].iter().map(|round| round[transaction]).collect();
